@@ -158,7 +158,7 @@ export default function App() {
 
     const img = new Image()
     img.onload = () => {
-      const strokes = imageToStrokes(img, { maxWidth: 1280, step: 12, minThick: 1, maxThick: 6 })
+      const { strokes, w, h } = imageToStrokes(img, { maxWidth: 1280, step: 12, minThick: 1, maxThick: 6 })
       const layer = createLayer(file.name.replace(/\.[^.]+$/, ''))
       layer.strokes = strokes
       layer.penLFOs = {
@@ -166,6 +166,9 @@ export default function App() {
         hue: { enabled: false, lfo: null },
       }
       layer.type = 'image'
+      layer.src = img.src
+      layer.imgW = w
+      layer.imgH = h
       setLayers((prev) => [...prev, layer])
       setActiveLayerId(layer.id)
       setStatusText(`Imported: ${strokes.length} strokes from ${file.name}`)

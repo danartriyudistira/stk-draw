@@ -21,6 +21,7 @@ export default function StageCanvas({
   const setOriginModeRef = useRef(setOriginMode)
   const strokeStartTimeRef = useRef(0)
   const cacheMapRef = useRef(new Map())
+  const imageCacheRef = useRef(new Map())
 
   layersRef.current = layers
   activeLayerIdRef.current = activeLayerId
@@ -162,6 +163,20 @@ export default function StageCanvas({
         ctx.scale(Math.max(0.01, sx), Math.max(0.01, sy))
 
         const cache = ensureCache(layer)
+
+        if (layer.type === 'image' && layer.src && layer.imgW && layer.imgH) {
+          let entry = imageCacheRef.current.get(layer.id)
+          if (!entry || entry.src !== layer.src) {
+            const imgEl = new Image()
+            imgEl.src = layer.src
+            entry = { img: imgEl, src: layer.src }
+            imageCacheRef.current.set(layer.id, entry)
+          }
+          const iw = layer.imgW
+          const ih = layer.imgH
+          ctx.drawImage(entry.img, -iw / 2, -ih / 2, iw, ih)
+        }
+
         if (cache.canvas) {
           ctx.drawImage(cache.canvas, cache.ox, cache.oy)
         } else {

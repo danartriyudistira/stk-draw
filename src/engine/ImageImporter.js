@@ -72,5 +72,5 @@ export function imageToStrokes(image, { maxWidth = 400, step = 3, minThick = 1, 
     }
   }
 
-  return strokes
+  return { strokes, w, h }
 }

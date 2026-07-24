@@ -38,13 +38,19 @@ function miterOffset(px, py, prevX, prevY, nextX, nextY, halfWidth, sign) {
   const bx = tx / tl
   const by = ty / tl
 
+  const n1x = -t1y * sign
+  const n1y = t1x * sign
+
   const mx = -by * sign
   const my = bx * sign
 
-  const n1x = -t1y * sign
-  const n1y = t1x * sign
   const dot = n1x * mx + n1y * my
-  const miterLen = Math.abs(dot) > 0.01 ? halfWidth / dot : halfWidth
+
+  if (dot <= 0) {
+    return { x: px + n1x * halfWidth, y: py + n1y * halfWidth }
+  }
+
+  const miterLen = halfWidth / dot
   const cap = Math.min(miterLen, halfWidth * 4)
 
   return {
@@ -54,8 +60,9 @@ function miterOffset(px, py, prevX, prevY, nextX, nextY, halfWidth, sign) {
 }
 
 function cutOffset(px, py, dirX, dirY, halfWidth, sign) {
-  const nx = -dirY * sign
-  const ny = dirX * sign
+  const len = safeLen(dist(0, 0, dirX, dirY))
+  const nx = -(dirY / len) * sign
+  const ny = (dirX / len) * sign
   return {
     x: px + nx * halfWidth,
     y: py + ny * halfWidth,

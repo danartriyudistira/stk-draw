@@ -12,12 +12,12 @@ const WAVEFORMS = [
 
 export default function LfoStrip({ label, config, onConfigChange, disabled }) {
   const easingNames = getEasingNames()
-  const lfo = config?.lfo || null
+  const lfo = config?.lfo
   const enabled = config?.enabled || false
 
   function setEnabled(v) {
     if (disabled) return
-    onConfigChange({ ...config, enabled: v, lfo: v ? (lfo || defaultLfo()) : null })
+    onConfigChange({ ...config, enabled: v, lfo: v ? (lfo || defaultLfo()) : lfo })
   }
 
   function updateLfo(field, value) {
@@ -92,7 +92,7 @@ export default function LfoStrip({ label, config, onConfigChange, disabled }) {
             min={config.minSliderMin ?? 0}
             max={config.maxSliderMin ?? (lfo?.max ?? 100)}
             step={1}
-            onChange={(v) => updateLfo('min', Math.min(v, lfo?.max - 0.01))}
+            onChange={(v) => updateLfo('min', Math.min(v, (lfo?.max ?? 100) - 0.01))}
           />
         </div>
         <div className="lfo-row">
@@ -102,7 +102,7 @@ export default function LfoStrip({ label, config, onConfigChange, disabled }) {
             min={lfo?.min ?? 0}
             max={config.maxSliderMax ?? 500}
             step={1}
-            onChange={(v) => updateLfo('max', Math.max(v, lfo?.min + 0.01))}
+            onChange={(v) => updateLfo('max', Math.max(v, (lfo?.min ?? 0) + 0.01))}
           />
         </div>
         <div className="lfo-phase-source">

@@ -39,7 +39,12 @@ function springSolver(tension, friction) {
       const wd = w0 * Math.sqrt(1 - zeta * zeta)
       return 1 - Math.exp(-zeta * w0 * t) * (Math.cos(wd * t) + (zeta / Math.sqrt(1 - zeta * zeta)) * Math.sin(wd * t))
     }
-    return 1 - Math.exp(-w0 * t)
+    if (Math.abs(zeta - 1) < 0.001) {
+      return 1 - Math.exp(-w0 * t) * (1 + w0 * t)
+    }
+    const s = Math.sqrt(zeta * zeta - 1)
+    const wd = w0 * s
+    return 1 - Math.exp(-zeta * w0 * t) * (Math.cosh(wd * t) + (zeta / s) * Math.sinh(wd * t))
   }
 }
 
@@ -62,8 +67,13 @@ function getSpringEasing(tension, friction) {
   return springCache.get(key)
 }
 
+const presetMap = new Map()
+for (const p of EASING_PRESETS) {
+  presetMap.set(p.name, p)
+}
+
 export function getEasing(name) {
-  const preset = EASING_PRESETS.find((p) => p.name === name)
+  const preset = presetMap.get(name)
   if (!preset) return null
   if (preset.type === 'spring') {
     return getSpringEasing(preset.params.tension, preset.params.friction)
@@ -71,8 +81,10 @@ export function getEasing(name) {
   return getBezierEasing(preset.params[0], preset.params[1], preset.params[2], preset.params[3])
 }
 
+const EASING_NAMES = EASING_PRESETS.map((p) => p.name)
+
 export function getEasingNames() {
-  return EASING_PRESETS.map((p) => p.name)
+  return EASING_NAMES
 }
 
 export function getEasingCategories() {

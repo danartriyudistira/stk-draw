@@ -147,15 +147,30 @@ export default function StageCanvas({
         const pts = currentStrokeRef.current
         if (pts.length > 0) {
           const aLayer = ls.find((l) => l.id === aid)
-          const aox = aLayer?.origin?.x ?? 0
-          const aoy = aLayer?.origin?.y ?? 0
-          const atx = aLayer?.transform?.x?.base ?? 0
-          const aty = aLayer?.transform?.y?.base ?? 0
-          ctx.save()
-          ctx.translate(atx, aty)
-          ctx.translate(aox, aoy)
-          renderStroke(ctx, pts)
-          ctx.restore()
+          if (aLayer) {
+            const tf = aLayer.transform
+            const ox = aLayer.origin?.x ?? 0
+            const oy = aLayer.origin?.y ?? 0
+
+            const ax = tf.x.lfo ? getLfoValue(time, tf.x.lfo, `${aLayer.id}_x`) : tf.x.base
+            const ay = tf.y.lfo ? getLfoValue(time, tf.y.lfo, `${aLayer.id}_y`) : tf.y.base
+            const arot = tf.rotation.lfo ? getLfoValue(time, tf.rotation.lfo, `${aLayer.id}_rot`) : tf.rotation.base
+            const asxVal = tf.scaleX.lfo ? getLfoValue(time, tf.scaleX.lfo, `${aLayer.id}_sx`) : tf.scaleX.base
+            const asx = isNaN(asxVal) ? tf.scaleX.base : asxVal
+            const asyVal = tf.scaleY.linkToScaleX
+              ? asx
+              : (tf.scaleY.lfo ? getLfoValue(time, tf.scaleY.lfo, `${aLayer.id}_sy`) : tf.scaleY.base)
+            const asy = isNaN(asyVal) ? tf.scaleY.base : asyVal
+
+            ctx.save()
+            ctx.globalAlpha = Math.max(0, Math.min(1, tf.opacity.base))
+            ctx.translate(ax, ay)
+            ctx.translate(ox, oy)
+            ctx.rotate((arot * Math.PI) / 180)
+            ctx.scale(Math.max(0.01, asx), Math.max(0.01, asy))
+            renderStroke(ctx, pts)
+            ctx.restore()
+          }
         }
       }
 
@@ -253,8 +268,7 @@ export default function StageCanvas({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-        style={{ display: 'block', width: '100%', height: '100%', cursor: setOriginMode ? 'crosshair' : 'crosshair', touchAction: 'none' }}
+        style={{ display: 'block', width: '100%', height: '100%', cursor: setOriginMode ? 'cell' : 'crosshair', touchAction: 'none' }}
       />
     </div>
   )

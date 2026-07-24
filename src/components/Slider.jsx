@@ -22,6 +22,8 @@ export default function Slider({ value, min, max, step, onChange, className, dis
     return Math.max(min, Math.min(max, stepped))
   }, [min, max, range, step, value])
 
+  const cleanupRef = useRef(null)
+
   const handlePointerDown = useCallback((e) => {
     if (disabled) return
     e.preventDefault()
@@ -36,10 +38,20 @@ export default function Slider({ value, min, max, step, onChange, className, dis
       draggingRef.current = false
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+      cleanupRef.current = null
     }
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+    cleanupRef.current = handlePointerUp
   }, [disabled, computeValue, onChange])
+
+  useEffect(() => {
+    return () => {
+      if (cleanupRef.current) cleanupRef.current()
+    }
+  }, [])
 
   const handleWheel = useCallback((e) => {
     if (disabled) return

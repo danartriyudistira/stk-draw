@@ -25,7 +25,7 @@ export default function LayerPanel({
 
   function handleDrop(idx) {
     const from = dragIdxRef.current
-    if (from != null && from !== idx) {
+    if (from != null && from !== idx && typeof onReorder === 'function') {
       onReorder(from, idx)
     }
     dragIdxRef.current = null

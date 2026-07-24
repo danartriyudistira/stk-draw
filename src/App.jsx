@@ -53,14 +53,13 @@ export default function App() {
 
   const handleDeleteLayer = useCallback(() => {
     if (layers.length <= 1) return
-    setLayers((prev) => {
-      const next = prev.filter((l) => l.id !== activeLayerId)
-      if (activeLayerId === prev[0]?.id && next.length > 0) {
-        setActiveLayerId(next[0].id)
-      }
-      return next
-    })
-  }, [layers.length, activeLayerId])
+    const next = layers.filter((l) => l.id !== activeLayerId)
+    if (next.length === 0) return
+    const deletedIdx = layers.findIndex((l) => l.id === activeLayerId)
+    const newActiveId = next[Math.min(deletedIdx, next.length - 1)].id
+    setLayers(next)
+    setActiveLayerId(newActiveId)
+  }, [layers, activeLayerId])
 
   const handleDuplicateLayer = useCallback(() => {
     const src = layers.find((l) => l.id === activeLayerId)
@@ -68,14 +67,14 @@ export default function App() {
     const dup = cloneLayer(src)
     dup.id = crypto.randomUUID?.() || `layer-${Date.now()}-${Math.random()}`
     dup.name = `${src.name} copy`
+    const idx = layers.findIndex((l) => l.id === activeLayerId)
     setLayers((prev) => {
-      const idx = prev.findIndex((l) => l.id === activeLayerId)
       const next = [...prev]
       next.splice(idx + 1, 0, dup)
       return next
     })
     setActiveLayerId(dup.id)
-  }, [activeLayerId, layers])
+  }, [activeLayerId])
 
   const handleRenameLayer = useCallback((id, name) => {
     setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, name } : l)))

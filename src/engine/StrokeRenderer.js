@@ -5,7 +5,11 @@ function hslToCss(h, s, l) {
 function dist(ax, ay, bx, by) {
   const dx = bx - ax
   const dy = by - ay
-  return Math.sqrt(dx * dx + dy * dy) || 1
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+function safeLen(l) {
+  return l < 0.0001 ? 1 : l
 }
 
 function miterOffset(px, py, prevX, prevY, nextX, nextY, halfWidth, sign) {
@@ -16,10 +20,10 @@ function miterOffset(px, py, prevX, prevY, nextX, nextY, halfWidth, sign) {
   const d2y = nextY - py
   const l2 = dist(px, py, nextX, nextY)
 
-  const t1x = d1x / l1
-  const t1y = d1y / l1
-  const t2x = d2x / l2
-  const t2y = d2y / l2
+  const t1x = d1x / safeLen(l1)
+  const t1y = d1y / safeLen(l1)
+  const t2x = d2x / safeLen(l2)
+  const t2y = d2y / safeLen(l2)
 
   const tx = t1x + t2x
   const ty = t1y + t2y

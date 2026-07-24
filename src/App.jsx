@@ -5,6 +5,7 @@ import LayerPanel from './components/LayerPanel.jsx'
 import PenLfoPanel from './components/PenLfoPanel.jsx'
 import TransformLfoPanel from './components/TransformLfoPanel.jsx'
 import { createLayer } from './data/defaultLayer.js'
+import { imageToStrokes } from './engine/ImageImporter.js'
 
 const INITIAL_LAYER = createLayer('Layer 1')
 
@@ -145,6 +146,29 @@ export default function App() {
     setStatusText('Exported PNG')
   }, [])
 
+  const fileInputRef = useRef(null)
+
+  const handleImportImage = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleFileChange = useCallback((e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const img = new Image()
+    img.onload = () => {
+      const strokes = imageToStrokes(img, { maxWidth: 400, step: 4, minThick: 1, maxThick: 6 })
+      updateActiveLayer((layer) => ({
+        ...layer,
+        strokes: [...layer.strokes, ...strokes],
+      }))
+      setStatusText(`Imported: ${strokes.length} strokes from ${file.name}`)
+    }
+    img.src = URL.createObjectURL(file)
+    e.target.value = ''
+  }, [updateActiveLayer])
+
   const handleReorderLayers = useCallback((fromIdx, toIdx) => {
     setLayers((prev) => {
       const next = [...prev]
@@ -163,7 +187,15 @@ export default function App() {
         </button>
         <button onClick={handleUndo}>↩ Undo</button>
         <button onClick={handleClearLayer}>✕ Clear</button>
+        <button onClick={handleImportImage}>+ Img</button>
         <button onClick={handleExportPNG}>↓ PNG</button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
         <span style={{ fontSize: 10, color: '#666', marginLeft: 8, fontFamily: 'monospace' }}>
           {lfoPreviewTime.toFixed(1)}s
         </span>

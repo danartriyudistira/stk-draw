@@ -5,7 +5,6 @@ import LayerPanel from './components/LayerPanel.jsx'
 import PenLfoPanel from './components/PenLfoPanel.jsx'
 import TransformLfoPanel from './components/TransformLfoPanel.jsx'
 import { createLayer } from './data/defaultLayer.js'
-import { imageToStrokes } from './engine/ImageImporter.js'
 
 const INITIAL_LAYER = createLayer('Layer 1')
 
@@ -158,9 +157,12 @@ export default function App() {
 
     const img = new Image()
     img.onload = () => {
-      const { strokes, w, h } = imageToStrokes(img, { maxWidth: 1280, step: 12, minThick: 1, maxThick: 6 })
+      const maxW = 1280
+      const scale = Math.min(1, maxW / img.width)
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
       const layer = createLayer(file.name.replace(/\.[^.]+$/, ''))
-      layer.strokes = strokes
+      layer.strokes = []
       layer.penLFOs = {
         thickness: { enabled: false, lfo: null },
         hue: { enabled: false, lfo: null },
@@ -171,7 +173,7 @@ export default function App() {
       layer.imgH = h
       setLayers((prev) => [...prev, layer])
       setActiveLayerId(layer.id)
-      setStatusText(`Imported: ${strokes.length} strokes from ${file.name}`)
+      setStatusText(`Imported: ${file.name} (${w}x${h})`)
     }
     img.src = URL.createObjectURL(file)
     e.target.value = ''

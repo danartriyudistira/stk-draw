@@ -162,8 +162,6 @@ export default function StageCanvas({
         ctx.rotate((rot * Math.PI) / 180)
         ctx.scale(Math.max(0.01, sx), Math.max(0.01, sy))
 
-        const cache = ensureCache(layer)
-
         if (layer.type === 'image' && layer.src && layer.imgW && layer.imgH) {
           let entry = imageCacheRef.current.get(layer.id)
           if (!entry || entry.src !== layer.src) {
@@ -172,17 +170,16 @@ export default function StageCanvas({
             entry = { img: imgEl, src: layer.src }
             imageCacheRef.current.set(layer.id, entry)
           }
-          const iw = layer.imgW
-          const ih = layer.imgH
-          ctx.drawImage(entry.img, -iw / 2, -ih / 2, iw, ih)
-        }
-
-        if (cache.canvas) {
-          ctx.drawImage(cache.canvas, cache.ox, cache.oy)
+          ctx.drawImage(entry.img, -layer.imgW / 2, -layer.imgH / 2, layer.imgW, layer.imgH)
         } else {
-          for (const stroke of layer.strokes) {
-            if (stroke.points && stroke.points.length > 0) {
-              renderStroke(ctx, stroke.points)
+          const cache = ensureCache(layer)
+          if (cache.canvas) {
+            ctx.drawImage(cache.canvas, cache.ox, cache.oy)
+          } else {
+            for (const stroke of layer.strokes) {
+              if (stroke.points && stroke.points.length > 0) {
+                renderStroke(ctx, stroke.points)
+              }
             }
           }
         }

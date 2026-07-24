@@ -158,7 +158,7 @@ export default function App() {
 
     const img = new Image()
     img.onload = () => {
-      const strokes = imageToStrokes(img, { maxWidth: 400, step: 4, minThick: 1, maxThick: 6 })
+      const strokes = imageToStrokes(img, { maxWidth: 1280, step: 12, minThick: 1, maxThick: 6 })
       updateActiveLayer((layer) => ({
         ...layer,
         strokes: [...layer.strokes, ...strokes],

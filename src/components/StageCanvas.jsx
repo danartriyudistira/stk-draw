@@ -20,6 +20,7 @@ export default function StageCanvas({
   const globalTimeRef = useRef(globalTime)
   const setOriginModeRef = useRef(setOriginMode)
   const strokeStartTimeRef = useRef(0)
+  const cacheMapRef = useRef(new Map())
 
   layersRef.current = layers
   activeLayerIdRef.current = activeLayerId
@@ -62,6 +63,49 @@ export default function StageCanvas({
 
     const ro = new ResizeObserver(resize)
     ro.observe(container)
+
+    const CACHE_THRESHOLD = 200
+
+    const ensureCache = (layer) => {
+      let entry = cacheMapRef.current.get(layer.id)
+      if (entry && entry.strokesRef === layer.strokes) return entry
+
+      const totalPoints = layer.strokes.reduce((s, st) => s + (st.points?.length || 0), 0)
+      if (totalPoints < CACHE_THRESHOLD) {
+        const e = { strokesRef: layer.strokes, canvas: null }
+        cacheMapRef.current.set(layer.id, e)
+        return e
+      }
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const st of layer.strokes) {
+        for (const p of st.points || []) {
+          if (p.x < minX) minX = p.x
+          if (p.y < minY) minY = p.y
+          if (p.x > maxX) maxX = p.x
+          if (p.y > maxY) maxY = p.y
+        }
+      }
+      if (!isFinite(minX)) {
+        minX = -100; minY = -100; maxX = 100; maxY = 100
+      }
+
+      const pad = 60
+      const bw = Math.ceil(maxX - minX + pad * 2)
+      const bh = Math.ceil(maxY - minY + pad * 2)
+      const oc = document.createElement('canvas')
+      oc.width = Math.min(bw, 4096)
+      oc.height = Math.min(bh, 4096)
+      const octx = oc.getContext('2d')
+      octx.translate(-minX + pad, -minY + pad)
+      for (const st of layer.strokes) {
+        if (st.points?.length) renderStroke(octx, st.points)
+      }
+
+      entry = { strokesRef: layer.strokes, canvas: oc, ox: minX - pad, oy: minY - pad }
+      cacheMapRef.current.set(layer.id, entry)
+      return entry
+    }
 
     const renderFrame = () => {
       const ctx = canvas.getContext('2d')
@@ -117,9 +161,14 @@ export default function StageCanvas({
         ctx.rotate((rot * Math.PI) / 180)
         ctx.scale(Math.max(0.01, sx), Math.max(0.01, sy))
 
-        for (const stroke of layer.strokes) {
-          if (stroke.points && stroke.points.length > 0) {
-            renderStroke(ctx, stroke.points)
+        const cache = ensureCache(layer)
+        if (cache.canvas) {
+          ctx.drawImage(cache.canvas, cache.ox, cache.oy)
+        } else {
+          for (const stroke of layer.strokes) {
+            if (stroke.points && stroke.points.length > 0) {
+              renderStroke(ctx, stroke.points)
+            }
           }
         }
 

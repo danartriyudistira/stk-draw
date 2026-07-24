@@ -159,15 +159,20 @@ export default function App() {
     const img = new Image()
     img.onload = () => {
       const strokes = imageToStrokes(img, { maxWidth: 1280, step: 12, minThick: 1, maxThick: 6 })
-      updateActiveLayer((layer) => ({
-        ...layer,
-        strokes: [...layer.strokes, ...strokes],
-      }))
+      const layer = createLayer(file.name.replace(/\.[^.]+$/, ''))
+      layer.strokes = strokes
+      layer.penLFOs = {
+        thickness: { enabled: false, lfo: null },
+        hue: { enabled: false, lfo: null },
+      }
+      layer.type = 'image'
+      setLayers((prev) => [...prev, layer])
+      setActiveLayerId(layer.id)
       setStatusText(`Imported: ${strokes.length} strokes from ${file.name}`)
     }
     img.src = URL.createObjectURL(file)
     e.target.value = ''
-  }, [updateActiveLayer])
+  }, [])
 
   const handleReorderLayers = useCallback((fromIdx, toIdx) => {
     setLayers((prev) => {

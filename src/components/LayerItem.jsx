@@ -43,6 +43,7 @@ export default function LayerItem({
           onDoubleClick={(e) => { e.stopPropagation(); setEditing(true) }}
         >
           {layer.name}
+          {layer.type === 'image' && <span style={{ color: '#4fc3f7', marginLeft: 3, fontSize: 9 }}>IMG</span>}
         </span>
       )}
       <div className="layer-btns">

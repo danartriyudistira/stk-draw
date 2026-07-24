@@ -113,7 +113,24 @@ export default function App() {
   }, [updateActiveLayer])
 
   const handleSetOrigin = useCallback((x, y) => {
-    updateActiveLayer((layer) => ({ ...layer, origin: { x, y } }))
+    updateActiveLayer((layer) => {
+      const oldOx = layer.origin?.x ?? 0
+      const oldOy = layer.origin?.y ?? 0
+      const dx = oldOx - x
+      const dy = oldOy - y
+      return {
+        ...layer,
+        origin: { x, y },
+        strokes: layer.strokes.map((stroke) => ({
+          ...stroke,
+          points: stroke.points.map((p) => ({
+            ...p,
+            x: p.x + dx,
+            y: p.y + dy,
+          })),
+        })),
+      }
+    })
     setSetOriginMode(false)
     setStatusText(`Origin: (${x.toFixed(0)}, ${y.toFixed(0)})`)
   }, [updateActiveLayer])

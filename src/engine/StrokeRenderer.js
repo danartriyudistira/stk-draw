@@ -114,6 +114,24 @@ export function renderStroke(ctx, points) {
       i2 = cutOffset(p2.x, p2.y, dirX, dirY, w2, -1)
     }
 
+    const len = safeLen(dist(0, 0, dirX, dirY))
+    const unx = dirX / len
+    const uny = dirY / len
+    const overlap = 1
+
+    if (i > 1) {
+      o1.x -= unx * overlap
+      o1.y -= uny * overlap
+      i1.x -= unx * overlap
+      i1.y -= uny * overlap
+    }
+    if (i < n - 1) {
+      o2.x += unx * overlap
+      o2.y += uny * overlap
+      i2.x += unx * overlap
+      i2.y += uny * overlap
+    }
+
     const grad = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y)
     grad.addColorStop(0, hslToCss(h1, 70, 50))
     grad.addColorStop(1, hslToCss(h2, 70, 50))

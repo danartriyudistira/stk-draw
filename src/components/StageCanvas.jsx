@@ -6,8 +6,10 @@ export default function StageCanvas({
   layers,
   activeLayerId,
   setOriginMode,
+  transformMode,
   onSetOrigin,
   onAddStroke,
+  onUpdateTransformBase,
   globalTime,
 }) {
   const canvasRef = useRef(null)
@@ -19,14 +21,19 @@ export default function StageCanvas({
   const activeLayerIdRef = useRef(activeLayerId)
   const globalTimeRef = useRef(globalTime)
   const setOriginModeRef = useRef(setOriginMode)
+  const transformModeRef = useRef(transformMode)
   const strokeStartTimeRef = useRef(0)
   const cacheMapRef = useRef(new Map())
   const imageCacheRef = useRef(new Map())
+  const transformDragRef = useRef(false)
+  const transformBaseRef = useRef({ x: 0, y: 0, rot: 0, sx: 1, sy: 1 })
+  const transformPointerRef = useRef({ x: 0, y: 0 })
 
   layersRef.current = layers
   activeLayerIdRef.current = activeLayerId
   globalTimeRef.current = globalTime
   setOriginModeRef.current = setOriginMode
+  transformModeRef.current = transformMode
 
   const getActiveLayer = useCallback(() => {
     return layersRef.current.find((l) => l.id === activeLayerIdRef.current)
@@ -204,6 +211,59 @@ export default function StageCanvas({
         }
       }
 
+      if (transformModeRef.current) {
+        const aLayer = ls.find((l) => l.id === aid)
+        if (aLayer) {
+          const bbox = computeLayerBbox(aLayer)
+          if (bbox) {
+            const tf = aLayer.transform
+            const ox = aLayer.origin?.x ?? 0
+            const oy = aLayer.origin?.y ?? 0
+            const tx = tf.x.lfo ? getLfoValue(time, tf.x.lfo, `${aLayer.id}_x`) : tf.x.base
+            const ty = tf.y.lfo ? getLfoValue(time, tf.y.lfo, `${aLayer.id}_y`) : tf.y.base
+            const rot = tf.rotation.lfo ? getLfoValue(time, tf.rotation.lfo, `${aLayer.id}_rot`) : tf.rotation.base
+            const sxf = tf.scaleX.lfo ? getLfoValue(time, tf.scaleX.lfo, `${aLayer.id}_sx`) : tf.scaleX.base
+            const syf = tf.scaleY.linkToScaleX ? sxf : (tf.scaleY.lfo ? getLfoValue(time, tf.scaleY.lfo, `${aLayer.id}_sy`) : tf.scaleY.base)
+            const sx = isNaN(sxf) ? tf.scaleX.base : sxf
+            const sy = isNaN(syf) ? tf.scaleY.base : syf
+
+            ctx.save()
+            ctx.translate(tx, ty)
+            ctx.translate(ox, oy)
+            ctx.rotate((rot * Math.PI) / 180)
+            ctx.scale(Math.max(0.01, sx), Math.max(0.01, sy))
+
+            const cx = (bbox.minX + bbox.maxX) / 2
+            const cy = (bbox.minY + bbox.maxY) / 2
+            const bw = bbox.maxX - bbox.minX + 20
+            const bh = bbox.maxY - bbox.minY + 20
+
+            ctx.strokeStyle = '#4fc3f7'
+            ctx.lineWidth = 1.5
+            ctx.setLineDash([6, 3])
+            ctx.strokeRect(cx - bw / 2, cy - bh / 2, bw, bh)
+            ctx.setLineDash([])
+
+            const hs = 10
+            ctx.fillStyle = '#4fc3f7'
+            ctx.strokeStyle = '#1a1a1a'
+            ctx.lineWidth = 1.5
+            const corners = [
+              { x: cx - bw / 2, y: cy - bh / 2 }, { x: cx + bw / 2, y: cy - bh / 2 },
+              { x: cx - bw / 2, y: cy + bh / 2 }, { x: cx + bw / 2, y: cy + bh / 2 },
+            ]
+            for (const c of corners) {
+              ctx.beginPath()
+              ctx.rect(c.x - hs / 2, c.y - hs / 2, hs, hs)
+              ctx.fill()
+              ctx.stroke()
+            }
+
+            ctx.restore()
+          }
+        }
+      }
+
       if (drawingRef.current) {
         const pts = currentStrokeRef.current
         if (pts.length > 0) {
@@ -255,6 +315,22 @@ export default function StageCanvas({
       return
     }
 
+    if (transformModeRef.current) {
+      const layer = getActiveLayer()
+      if (!layer) return
+      transformDragRef.current = true
+      const pos = getCanvasPos(e)
+      transformPointerRef.current = { x: pos.x, y: pos.y }
+      transformBaseRef.current = {
+        x: layer.transform.x.base,
+        y: layer.transform.y.base,
+        rot: layer.transform.rotation.base,
+        sx: layer.transform.scaleX.base,
+        sy: layer.transform.scaleY.base,
+      }
+      return
+    }
+
     const layer = getActiveLayer()
     if (!layer || layer.locked) return
 
@@ -281,6 +357,22 @@ export default function StageCanvas({
   }, [getCanvasPos, onSetOrigin, getActiveLayer])
 
   const handlePointerMove = useCallback((e) => {
+    if (transformDragRef.current) {
+      const pos = getCanvasPos(e)
+      const dx = pos.x - transformPointerRef.current.x
+      const dy = pos.y - transformPointerRef.current.y
+      const tb = transformBaseRef.current
+      onUpdateTransformBase((layer) => ({
+        ...layer,
+        transform: {
+          ...layer.transform,
+          x: { ...layer.transform.x, base: tb.x + dx },
+          y: { ...layer.transform.y, base: tb.y + dy },
+        },
+      }))
+      return
+    }
+
     if (!drawingRef.current) return
     const layer = getActiveLayer()
     if (!layer) return
@@ -309,9 +401,13 @@ export default function StageCanvas({
       time: globalTimeRef.current,
       distance: distanceRef.current,
     })
-  }, [getCanvasPos, getActiveLayer])
+  }, [getCanvasPos, getActiveLayer, onUpdateTransformBase])
 
   const handlePointerUp = useCallback(() => {
+    if (transformDragRef.current) {
+      transformDragRef.current = false
+      return
+    }
     if (!drawingRef.current) return
     drawingRef.current = false
 
@@ -322,6 +418,41 @@ export default function StageCanvas({
     }
   }, [onAddStroke])
 
+  const handleWheel = useCallback((e) => {
+    if (!transformModeRef.current) return
+    e.preventDefault()
+
+    const layer = getActiveLayer()
+    if (!layer) return
+
+    const delta = e.deltaY > 0 ? -0.05 : 0.05
+
+    if (e.shiftKey) {
+      onUpdateTransformBase((layer) => ({
+        ...layer,
+        transform: {
+          ...layer.transform,
+          rotation: { ...layer.transform.rotation, base: layer.transform.rotation.base + delta * 50 },
+        },
+      }))
+    } else {
+      onUpdateTransformBase((layer) => {
+        const sx = layer.transform.scaleX.base + delta
+        const sy = layer.transform.scaleY.linkToScaleX
+          ? sx
+          : layer.transform.scaleY.base + delta
+        return {
+          ...layer,
+          transform: {
+            ...layer.transform,
+            scaleX: { ...layer.transform.scaleX, base: Math.max(0.01, sx) },
+            scaleY: { ...layer.transform.scaleY, base: Math.max(0.01, sy), linkToScaleX: layer.transform.scaleY.linkToScaleX },
+          },
+        }
+      })
+    }
+  }, [getActiveLayer, onUpdateTransformBase])
+
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
       <canvas
@@ -329,7 +460,8 @@ export default function StageCanvas({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        style={{ display: 'block', width: '100%', height: '100%', cursor: setOriginMode ? 'cell' : 'crosshair', touchAction: 'none' }}
+        onWheel={handleWheel}
+        style={{ display: 'block', width: '100%', height: '100%', cursor: setOriginMode ? 'cell' : transformMode ? 'grab' : 'crosshair', touchAction: 'none' }}
       />
     </div>
   )
@@ -343,4 +475,23 @@ function getPenLfoVal(layer, key, globalTime, distance) {
   const lfo = config.lfo
   const phase = lfo.phaseSource === 'distance' ? distance / 100 : globalTime
   return getLfoValue(phase, lfo, `${layer.id}_pen_${key}`)
+}
+
+function computeLayerBbox(layer) {
+  if (layer.type === 'image' && layer.imgW && layer.imgH) {
+    const hw = layer.imgW / 2
+    const hh = layer.imgH / 2
+    return { minX: -hw, minY: -hh, maxX: hw, maxY: hh }
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const st of layer.strokes || []) {
+    for (const p of st.points || []) {
+      if (p.x < minX) minX = p.x
+      if (p.y < minY) minY = p.y
+      if (p.x > maxX) maxX = p.x
+      if (p.y > maxY) maxY = p.y
+    }
+  }
+  if (!isFinite(minX)) return null
+  return { minX, minY, maxX, maxY }
 }

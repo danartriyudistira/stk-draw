@@ -17,6 +17,7 @@ export default function App() {
   const [activeLayerId, setActiveLayerId] = useState(INITIAL_LAYER.id)
   const [isPlaying, setIsPlaying] = useState(true)
   const [setOriginMode, setSetOriginMode] = useState(false)
+  const [transformMode, setTransformMode] = useState(false)
   const [statusText, setStatusText] = useState('Ready')
   const [lfoPreviewTime, setLfoPreviewTime] = useState(0)
   const globalTimeRef = useRef(0)
@@ -189,6 +190,9 @@ export default function App() {
         </button>
         <button onClick={handleUndo}>↩ Undo</button>
         <button onClick={handleClearLayer}>✕ Clear</button>
+        <button className={transformMode ? 'active' : ''} onClick={() => setTransformMode(!transformMode)}>
+          {transformMode ? '✋ Hand' : '↕ Move'}
+        </button>
         <button onClick={handleExportPNG}>↓ PNG</button>
         <span style={{ fontSize: 10, color: '#666', marginLeft: 8, fontFamily: 'monospace' }}>
           {lfoPreviewTime.toFixed(1)}s
@@ -211,14 +215,16 @@ export default function App() {
         />
 
         <div className="stage-area">
-          <StageCanvas
-            layers={layers}
-            activeLayerId={activeLayerId}
-            setOriginMode={setOriginMode}
-            onSetOrigin={handleSetOrigin}
-            onAddStroke={handleAddStroke}
-            globalTime={lfoPreviewTime}
-          />
+            <StageCanvas
+              layers={layers}
+              activeLayerId={activeLayerId}
+              setOriginMode={setOriginMode}
+              transformMode={transformMode}
+              onSetOrigin={handleSetOrigin}
+              onAddStroke={handleAddStroke}
+              onUpdateTransformBase={updateActiveLayer}
+              globalTime={lfoPreviewTime}
+            />
         </div>
 
         <div className="right-panel">

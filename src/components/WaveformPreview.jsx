@@ -73,7 +73,9 @@ function WaveformPreview({ config, width = 200, height = 36 }) {
       ctx.closePath()
       ctx.fill()
 
-      const phase = ((globalTimeRef.current * (cfg.speed || 1)) + (cfg.phaseOffset || 0)) % 1
+      const spd = cfg.speed || 0
+      const rawPhase = ((globalTimeRef.current * spd) + (cfg.phaseOffset || 0)) % 1
+      const phase = rawPhase < 0 ? rawPhase + 1 : rawPhase
       const dotX = phase * pw
       const currentValue = getLfoValue(globalTimeRef.current, cfg, 'preview_dot')
       const yNorm = range > 0 ? (currentValue - minVal) / range : 0.5

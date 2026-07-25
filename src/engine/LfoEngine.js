@@ -22,18 +22,21 @@ function getWaveValue(waveform, phase, key) {
     case 'saw': return waveSaw(phase)
     case 'square': return waveSquare(phase)
     case 'random': return sampleAndHold(`lfo_${key}`, phase, 1)
+    case 'none': return 0
     default: return waveSine(phase)
   }
 }
 
 export function getLfoValue(phase, config, key = 'default') {
   if (!config) return 0
-  const rawPhase = ((phase * config.speed) + (config.phaseOffset || 0)) % 1
+  const spd = config.speed || 0
+  let rawPhase = ((phase * spd) + (config.phaseOffset || 0)) % 1
+  if (rawPhase < 0) rawPhase += 1
   let wf
 
   if (config.waveform === 'random') {
-    const hold = 1 / Math.max(config.speed, 0.01)
-    wf = sampleAndHold(`lfo_${key}`, phase * config.speed, hold)
+    const hold = 1 / Math.max(Math.abs(spd), 0.001)
+    wf = sampleAndHold(`lfo_${key}`, phase * Math.abs(spd), hold)
   } else {
     wf = getWaveValue(config.waveform, rawPhase, key)
   }

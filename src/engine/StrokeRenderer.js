@@ -76,7 +76,7 @@ export function renderStroke(ctx, points) {
     const w = (p.thickness || 4) / 2
     ctx.beginPath()
     ctx.arc(p.x, p.y, w, 0, Math.PI * 2)
-    ctx.fillStyle = hslToCss(p.hue || 200, 70, 50)
+    ctx.fillStyle = hslToCss(p.hue || 200, p.saturation ?? 70, p.lightness ?? 50)
     ctx.fill()
     return
   }
@@ -90,6 +90,10 @@ export function renderStroke(ctx, points) {
     const w2 = (p2.thickness || 2) / 2
     const h1 = p1.hue ?? 200
     const h2 = p2.hue ?? 200
+    const s1 = p1.saturation ?? 70
+    const s2 = p2.saturation ?? 70
+    const l1 = p1.lightness ?? 50
+    const l2 = p2.lightness ?? 50
 
     const dirX = p2.x - p1.x
     const dirY = p2.y - p1.y
@@ -133,8 +137,8 @@ export function renderStroke(ctx, points) {
     }
 
     const grad = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y)
-    grad.addColorStop(0, hslToCss(h1, 70, 50))
-    grad.addColorStop(1, hslToCss(h2, 70, 50))
+    grad.addColorStop(0, hslToCss(h1, s1, l1))
+    grad.addColorStop(1, hslToCss(h2, s2, l2))
 
     ctx.fillStyle = grad
     ctx.beginPath()

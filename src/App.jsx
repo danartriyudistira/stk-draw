@@ -3,16 +3,13 @@ import './App.css'
 import StageCanvas from './components/StageCanvas.jsx'
 import LayerPanel from './components/LayerPanel.jsx'
 import PenLfoPanel from './components/PenLfoPanel.jsx'
+import KineticPanel from './components/KineticPanel.jsx'
 import TransformLfoPanel from './components/TransformLfoPanel.jsx'
-import { createLayer } from './data/defaultLayer.js'
+import { createLayer, createGroup, createKineticLayer, deepCloneSubtree, collectDescendantIds } from './data/defaultLayer.js'
 
 const INITIAL_LAYER = createLayer('Layer 1')
 
 export const globalTimeRef = { current: 0 }
-
-function cloneLayer(layer) {
-  return JSON.parse(JSON.stringify(layer))
-}
 
 const ClockDisplay = memo(function ClockDisplay({ className }) {
   const [t, setT] = useState(0)
@@ -33,7 +30,7 @@ export default function App() {
   const [activeLayerId, setActiveLayerId] = useState(INITIAL_LAYER.id)
   const [isPlaying, setIsPlaying] = useState(true)
   const [setOriginMode, setSetOriginMode] = useState(false)
-  const [transformMode, setTransformMode] = useState(false)
+  const [drawMode, setDrawMode] = useState(true)
   const [statusText, setStatusText] = useState('Ready')
   const rafIdRef = useRef(null)
 
@@ -71,8 +68,9 @@ export default function App() {
   const handleDeleteLayer = useCallback(() => {
     setLayers((prev) => {
       if (prev.length <= 1) return prev
+      const idsToRemove = new Set(collectDescendantIds(prev, activeLayerId))
       const deletedIdx = prev.findIndex((l) => l.id === activeLayerId)
-      const next = prev.filter((l) => l.id !== activeLayerId)
+      const next = prev.filter((l) => !idsToRemove.has(l.id))
       if (next.length > 0) {
         const newId = next[Math.min(deletedIdx, next.length - 1)].id
         setActiveLayerId(newId)
@@ -83,15 +81,12 @@ export default function App() {
 
   const handleDuplicateLayer = useCallback(() => {
     setLayers((prev) => {
-      const src = prev.find((l) => l.id === activeLayerId)
-      if (!src) return prev
-      const dup = cloneLayer(src)
-      dup.id = crypto.randomUUID?.() || `layer-${Date.now()}-${Math.random()}`
-      dup.name = `${src.name} copy`
+      const cloned = deepCloneSubtree(prev, activeLayerId)
+      if (!cloned || !cloned.length) return prev
       const idx = prev.findIndex((l) => l.id === activeLayerId)
       const next = [...prev]
-      next.splice(idx + 1, 0, dup)
-      setActiveLayerId(dup.id)
+      next.splice(idx + 1, 0, ...cloned)
+      setActiveLayerId(cloned[0].id)
       return next
     })
   }, [activeLayerId])
@@ -179,8 +174,10 @@ export default function App() {
       const layer = createLayer(file.name.replace(/\.[^.]+$/, ''))
       layer.strokes = []
       layer.penLFOs = {
-        thickness: { enabled: false, lfo: null },
-        hue: { enabled: false, lfo: null },
+        thickness: { lfo: null },
+        hue: { lfo: null },
+        saturation: { lfo: null },
+        lightness: { lfo: null },
       }
       layer.type = 'image'
       layer.src = url
@@ -191,6 +188,81 @@ export default function App() {
       setStatusText(`Imported: ${file.name} (${w}x${h})`)
     }
     img.src = url
+  }, [])
+
+  const handleAddKineticLayer = useCallback(() => {
+    setLayers((prev) => {
+      const layer = createKineticLayer(`Kinetic ${prev.length + 1}`)
+      setActiveLayerId(layer.id)
+      return [...prev, layer]
+    })
+  }, [])
+
+  const handleAddGroup = useCallback(() => {
+    setLayers((prev) => {
+      const group = createGroup(`Group ${prev.length + 1}`)
+      setActiveLayerId(group.id)
+      return [...prev, group]
+    })
+  }, [])
+
+  const handleGroupLayer = useCallback(() => {
+    setLayers((prev) => {
+      const active = prev.find((l) => l.id === activeLayerId)
+      if (!active) return prev
+      const group = createGroup(`Group ${prev.length + 1}`)
+      const updated = prev.map((l) =>
+        l.id === activeLayerId ? { ...l, parentId: group.id } : l
+      )
+      return [...updated, group]
+    })
+  }, [activeLayerId])
+
+  const handleReparent = useCallback((layerId, newParentId) => {
+    setLayers((prev) => {
+      if (newParentId && layerId === newParentId) return prev
+      let p = newParentId
+      while (p) {
+        if (p === layerId) return prev
+        const parent = prev.find((l) => l.id === p)
+        p = parent?.parentId ?? null
+      }
+      const destParent = newParentId ? prev.find((l) => l.id === newParentId) : null
+      if (destParent && destParent.type !== 'group') return prev
+      return prev.map((l) =>
+        l.id === layerId ? { ...l, parentId: newParentId } : l
+      )
+    })
+  }, [])
+
+  const handleToggleExpand = useCallback((layerId) => {
+    setLayers((prev) =>
+      prev.map((l) =>
+        l.id === layerId && l.type === 'group'
+          ? { ...l, childrenExpanded: !l.childrenExpanded }
+          : l
+      )
+    )
+  }, [])
+
+  const handleLinkParent = useCallback((layerId, newLinkId) => {
+    setLayers((prev) => {
+      if (newLinkId && layerId === newLinkId) return prev
+      if (newLinkId) {
+        let p = newLinkId
+        const visited = new Set()
+        while (p) {
+          if (visited.has(p)) return prev
+          if (p === layerId) return prev
+          visited.add(p)
+          const linkLayer = prev.find((l) => l.id === p)
+          p = linkLayer?.linkParentId ?? null
+        }
+      }
+      return prev.map((l) =>
+        l.id === layerId ? { ...l, linkParentId: newLinkId } : l
+      )
+    })
   }, [])
 
   const handleReorderLayers = useCallback((fromIdx, toIdx) => {
@@ -214,8 +286,8 @@ export default function App() {
         </button>
         <button onClick={handleUndo}>↩ Undo</button>
         <button onClick={handleClearLayer}>✕ Clear</button>
-        <button className={transformMode ? 'active' : ''} onClick={() => setTransformMode(!transformMode)}>
-          {transformMode ? '✋ Hand' : '↕ Move'}
+        <button className={drawMode ? 'active' : ''} onClick={() => setDrawMode(!drawMode)}>
+          {drawMode ? '✎ Draw' : '↕ Transform'}
         </button>
         <button onClick={handleExportPNG}>↓ PNG</button>
         <ClockDisplay className="toolbar-clock" />
@@ -227,13 +299,19 @@ export default function App() {
           activeLayerId={activeLayerId}
           onSelect={setActiveLayerId}
           onAdd={handleAddLayer}
+          onAddGroup={handleAddGroup}
+          onGroupLayer={handleGroupLayer}
           onDelete={handleDeleteLayer}
           onDuplicate={handleDuplicateLayer}
           onRename={handleRenameLayer}
           onToggleVisible={handleToggleVisible}
           onToggleLocked={handleToggleLocked}
           onReorder={handleReorderLayers}
+          onReparent={handleReparent}
+          onToggleExpand={handleToggleExpand}
           onImportImage={handleImportImage}
+          onAddKinetic={handleAddKineticLayer}
+          onLinkParent={handleLinkParent}
         />
 
         <div className="stage-area">
@@ -241,32 +319,59 @@ export default function App() {
             layers={layers}
             activeLayerId={activeLayerId}
             setOriginMode={setOriginMode}
-            transformMode={transformMode}
+            drawMode={drawMode}
             onSetOrigin={handleSetOrigin}
             onAddStroke={handleAddStroke}
             onUpdateTransformBase={updateActiveLayer}
+            onUpdateLayer={updateActiveLayer}
           />
         </div>
 
         <div className="right-panel">
-          <PenLfoPanel
-            layer={activeLayer}
-            onChange={updateActiveLayer}
-          />
-          <TransformLfoPanel
-            layer={activeLayer}
-            onChange={updateActiveLayer}
-            setOriginMode={setOriginMode}
-            onSetOriginMode={handleSetOriginMode}
-            onCancelSetOrigin={handleCancelSetOrigin}
-          />
+          {drawMode ? (
+            <>
+              {activeLayer?.type !== 'kinetic' && (
+                <PenLfoPanel
+                  layer={activeLayer}
+                  onChange={updateActiveLayer}
+                />
+              )}
+              {activeLayer?.type === 'kinetic' && (
+                <KineticPanel
+                  layer={activeLayer}
+                  onChange={updateActiveLayer}
+                />
+              )}
+              <TransformLfoPanel
+                layer={activeLayer}
+                onChange={updateActiveLayer}
+                setOriginMode={setOriginMode}
+                onSetOriginMode={handleSetOriginMode}
+                onCancelSetOrigin={handleCancelSetOrigin}
+                target="transform"
+                layers={layers}
+                onLinkParent={handleLinkParent}
+              />
+            </>
+          ) : (
+            <TransformLfoPanel
+              layer={activeLayer}
+              onChange={updateActiveLayer}
+              setOriginMode={setOriginMode}
+              onSetOriginMode={handleSetOriginMode}
+              onCancelSetOrigin={handleCancelSetOrigin}
+              target="placement"
+              layers={layers}
+              onLinkParent={handleLinkParent}
+            />
+          )}
         </div>
       </div>
 
       <div className="status-bar">
         <span>{statusText}</span>
         <span>Layer: {activeLayer?.name || '—'}</span>
-        <span>Strokes: {activeLayer?.strokes.length || 0}</span>
+        <span>Strokes: {activeLayer?.strokes?.length ?? activeLayer?.paths?.length ?? 0}</span>
         <ClockDisplay className="status-phase" />
       </div>
     </div>

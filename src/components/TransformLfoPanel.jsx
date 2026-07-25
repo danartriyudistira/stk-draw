@@ -1,97 +1,90 @@
 import LfoStrip from './LfoStrip.jsx'
-import Slider from './Slider.jsx'
 
-const TRANSFORM_KEYS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'opacity']
+const TRANSFORM_KEYS = ['x', 'y', 'rotation', 'opacity']
 
 const KEY_CONFIG = {
-  x:        { label: 'X',     baseMin: -500, baseMax: 500, baseStep: 1,    sliderMinMin: -500, sliderMaxMax: 500 },
-  y:        { label: 'Y',     baseMin: -500, baseMax: 500, baseStep: 1,    sliderMinMin: -500, sliderMaxMax: 500 },
-  rotation: { label: 'Rot',   baseMin: -360, baseMax: 360, baseStep: 1,    sliderMinMin: -360, sliderMaxMax: 360 },
-  scaleX:   { label: 'SclX',  baseMin: 0,    baseMax: 5,   baseStep: 0.01, sliderMinMin: -2,  sliderMaxMax: 5 },
-  scaleY:   { label: 'SclY',  baseMin: 0,    baseMax: 5,   baseStep: 0.01, sliderMinMin: -2,  sliderMaxMax: 5 },
-  opacity:  { label: 'Op',    baseMin: 0,    baseMax: 1,   baseStep: 0.01, sliderMinMin: 0,   sliderMaxMax: 1 },
+  x:        { label: 'X',     sliderMinMin: -500, sliderMaxMax: 500 },
+  y:        { label: 'Y',     sliderMinMin: -500, sliderMaxMax: 500 },
+  rotation: { label: 'Rot',   sliderMinMin: -360, sliderMaxMax: 360 },
+  scaleX:   { label: 'SclX',  sliderMinMin: -2,   sliderMaxMax: 5 },
+  scaleY:   { label: 'SclY',  sliderMinMin: -2,   sliderMaxMax: 5 },
+  opacity:  { label: 'Op',    sliderMinMin: 0,    sliderMaxMax: 1 },
 }
 
-export default function TransformLfoPanel({ layer, onChange, setOriginMode, onSetOriginMode, onCancelSetOrigin }) {
+export default function TransformLfoPanel({ layer, onChange, setOriginMode, onSetOriginMode, onCancelSetOrigin, target = 'placement', layers, onLinkParent }) {
   if (!layer) return null
+  const tf = layer[target]
+  if (!tf) return null
 
   function updateTransform(key, newLfoConfig) {
     onChange((l) => ({
       ...l,
-      transform: {
-        ...l.transform,
-        [key]: { ...l.transform[key], lfo: newLfoConfig.enabled ? newLfoConfig.lfo : null },
+      [target]: {
+        ...l[target],
+        [key]: { ...l[target][key], lfo: newLfoConfig.lfo },
       },
     }))
   }
 
-  function handleBaseChange(key, value) {
+  function handleScaleYLink(linked) {
     onChange((l) => {
-      const t = JSON.parse(JSON.stringify(l.transform))
-      t[key] = { ...t[key], base: value }
-      return { ...l, transform: t }
+      const t = JSON.parse(JSON.stringify(l[target]))
+      t.scaleY = { ...t.scaleY, linkToScaleX: linked }
+      if (linked) {
+        t.scaleY.lfo = t.scaleX.lfo ? JSON.parse(JSON.stringify(t.scaleX.lfo)) : null
+      }
+      return { ...l, [target]: t }
     })
   }
 
-  function handleScaleYLink(linked) {
-    onChange((l) => {
-      const t = JSON.parse(JSON.stringify(l.transform))
-      t.scaleY = { ...t.scaleY, linkToScaleX: linked }
-      if (linked) {
-        t.scaleY.base = t.scaleX.base
-        t.scaleY.lfo = t.scaleX.lfo ? JSON.parse(JSON.stringify(t.scaleX.lfo)) : null
-      }
-      return { ...l, transform: t }
-    })
-  }
+  const linked = tf.scaleY?.linkToScaleX || false
 
   return (
     <div className="panel-section">
-      <div className="panel-section-label">Transform LFO</div>
+      <div className="panel-section-label">{target === 'transform' ? 'Transform LFO' : 'Placement LFO'}</div>
+
+      <div className="transform-row">
+        <span className="tr-label"></span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 10, cursor: 'pointer', fontSize: 10, color: '#888' }}>
+          <input
+            type="checkbox"
+            checked={tf.flipH || false}
+            onChange={(e) => {
+              onChange((l) => {
+                const t = JSON.parse(JSON.stringify(l[target]))
+                t.flipH = e.target.checked
+                return { ...l, [target]: t }
+              })
+            }}
+            style={{ margin: 0, accentColor: '#4fc3f7' }}
+          />
+          Flip H
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, color: '#888' }}>
+          <input
+            type="checkbox"
+            checked={tf.flipV || false}
+            onChange={(e) => {
+              onChange((l) => {
+                const t = JSON.parse(JSON.stringify(l[target]))
+                t.flipV = e.target.checked
+                return { ...l, [target]: t }
+              })
+            }}
+            style={{ margin: 0, accentColor: '#4fc3f7' }}
+          />
+          Flip V
+        </label>
+      </div>
 
       {TRANSFORM_KEYS.map((key) => {
-        const t = layer.transform[key]
-        const kc = KEY_CONFIG[key]
-
-        return (
-          <div key={key} className="transform-row">
-            <span className="tr-label">{kc.label}</span>
-            <Slider
-              value={t.base}
-              min={kc.baseMin}
-              max={kc.baseMax}
-              step={kc.baseStep}
-              onChange={(v) => handleBaseChange(key, v)}
-            />
-            {key === 'scaleY' && (
-              <label style={{ fontSize: 9, color: '#666', display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer', marginRight: 4 }}>
-                <input
-                  type="checkbox"
-                  checked={t.linkToScaleX || false}
-                  onChange={(e) => handleScaleYLink(e.target.checked)}
-                  style={{ margin: 0 }}
-                />
-                link
-              </label>
-            )}
-            <span className="tr-value">
-              {key === 'scaleX' || key === 'scaleY' || key === 'opacity'
-                ? t.base.toFixed(2)
-                : t.base.toFixed(1)}
-            </span>
-          </div>
-        )
-      })}
-
-      {TRANSFORM_KEYS.map((key) => {
-        const t = layer.transform[key]
+        const t = tf[key]
         const kc = KEY_CONFIG[key]
         return (
           <LfoStrip
             key={`lfo-${key}`}
             label={key}
             config={{
-              enabled: !!t.lfo,
               lfo: t.lfo,
               minSliderMin: kc.sliderMinMin,
               maxSliderMax: kc.sliderMaxMax,
@@ -100,6 +93,69 @@ export default function TransformLfoPanel({ layer, onChange, setOriginMode, onSe
           />
         )
       })}
+
+      <LfoStrip
+        label="scaleX"
+        config={{
+          lfo: tf.scaleX.lfo,
+          minSliderMin: KEY_CONFIG.scaleX.sliderMinMin,
+          maxSliderMax: KEY_CONFIG.scaleX.sliderMaxMax,
+        }}
+        onConfigChange={(newConfig) => updateTransform('scaleX', newConfig)}
+      />
+
+      <div className="transform-row" style={{ marginBottom: 4 }}>
+        <span className="tr-label"></span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, color: '#888' }}>
+          <input
+            type="checkbox"
+            checked={linked}
+            onChange={(e) => handleScaleYLink(e.target.checked)}
+            style={{ margin: 0, accentColor: '#4fc3f7' }}
+          />
+          Lock SclY to SclX
+        </label>
+      </div>
+
+      <LfoStrip
+        label="scaleY"
+        config={{
+          lfo: tf.scaleY.lfo,
+          minSliderMin: KEY_CONFIG.scaleY.sliderMinMin,
+          maxSliderMax: KEY_CONFIG.scaleY.sliderMaxMax,
+        }}
+        onConfigChange={(newConfig) => updateTransform('scaleY', newConfig)}
+        disabled={linked}
+      />
+
+      {onLinkParent && layers && (
+        <div className="origin-row" style={{ marginBottom: 6 }}>
+          <label style={{ minWidth: 40 }}>Link To</label>
+          <select
+            className="lfo-select"
+            style={{ flex: 1 }}
+            value={layer.linkParentId || ''}
+            onChange={(e) => onLinkParent(layer.id, e.target.value || null)}
+          >
+            <option value="">— none —</option>
+            {layers
+              .filter((l) => l.id !== layer.id)
+              .map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}{l.type === 'group' ? ' [G]' : ''}
+                </option>
+              ))}
+          </select>
+          {layer.linkParentId && (
+            <button
+              style={{ padding: '2px 6px', fontSize: 10, background: '#333', color: '#ccc', border: '1px solid #444', borderRadius: 3, cursor: 'pointer' }}
+              onClick={() => onLinkParent(layer.id, null)}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="origin-row">
         <label>Origin</label>

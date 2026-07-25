@@ -1,13 +1,21 @@
 import { useRef, useCallback, useEffect, useState, memo } from 'react'
 
-function Slider({ value, min, max, step, onChange, className, disabled }) {
+function Slider({ value, min, max, step, onChange, className, disabled, defaultValue }) {
   const trackRef = useRef(null)
   const draggingRef = useRef(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
   const inputRef = useRef(null)
-  const valsRef = useRef({ value, min, max, step, onChange })
-  valsRef.current = { value, min, max, step, onChange }
+  const valsRef = useRef({ value, min, max, step, onChange, defaultValue })
+  valsRef.current = { value, min, max, step, onChange, defaultValue }
+
+  const handleContextMenu = useCallback((e) => {
+    if (disabled) return
+    e.preventDefault()
+    const v = valsRef.current
+    const def = v.defaultValue !== undefined ? v.defaultValue : v.min
+    v.onChange?.(Math.max(v.min, Math.min(v.max, def)))
+  }, [disabled])
 
   const range = max - min || 1
   const frac = Math.max(0, Math.min(1, (value - min) / range))
@@ -33,10 +41,10 @@ function Slider({ value, min, max, step, onChange, className, disabled }) {
     e.preventDefault()
     draggingRef.current = true
     const val = computeValue(e.clientX)
-    onChange?.(val)
+    valsRef.current.onChange?.(val)
     const handlePointerMove = (e) => {
       if (!draggingRef.current) return
-      onChange?.(computeValue(e.clientX))
+      valsRef.current.onChange?.(computeValue(e.clientX))
     }
     const handlePointerUp = () => {
       draggingRef.current = false
@@ -49,7 +57,7 @@ function Slider({ value, min, max, step, onChange, className, disabled }) {
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', handlePointerUp)
     cleanupRef.current = handlePointerUp
-  }, [disabled, onChange])
+  }, [disabled])
 
   useEffect(() => {
     return () => {
@@ -107,6 +115,7 @@ function Slider({ value, min, max, step, onChange, className, disabled }) {
         ref={trackRef}
         className={`td-slider${className ? ' ' + className : ''}${disabled ? ' td-slider--disabled' : ''}`}
         onPointerDown={handlePointerDown}
+        onContextMenu={handleContextMenu}
         role="slider"
         tabIndex={disabled ? -1 : 0}
         aria-valuemin={min}

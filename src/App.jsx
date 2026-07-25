@@ -145,14 +145,7 @@ export default function App() {
     setStatusText('Exported PNG')
   }, [])
 
-  const fileInputRef = useRef(null)
-
-  const handleImportImage = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const handleFileChange = useCallback((e) => {
-    const file = e.target.files?.[0]
+  const handleImportImage = useCallback((file) => {
     if (!file) return
 
     const img = new Image()
@@ -176,7 +169,6 @@ export default function App() {
       setStatusText(`Imported: ${file.name} (${w}x${h})`)
     }
     img.src = URL.createObjectURL(file)
-    e.target.value = ''
   }, [])
 
   const handleReorderLayers = useCallback((fromIdx, toIdx) => {
@@ -197,15 +189,7 @@ export default function App() {
         </button>
         <button onClick={handleUndo}>↩ Undo</button>
         <button onClick={handleClearLayer}>✕ Clear</button>
-        <button onClick={handleImportImage}>+ Img</button>
         <button onClick={handleExportPNG}>↓ PNG</button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={handleFileChange}
-        />
         <span style={{ fontSize: 10, color: '#666', marginLeft: 8, fontFamily: 'monospace' }}>
           {lfoPreviewTime.toFixed(1)}s
         </span>
@@ -223,6 +207,7 @@ export default function App() {
           onToggleVisible={handleToggleVisible}
           onToggleLocked={handleToggleLocked}
           onReorder={handleReorderLayers}
+          onImportImage={handleImportImage}
         />
 
         <div className="stage-area">

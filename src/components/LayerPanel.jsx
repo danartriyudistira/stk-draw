@@ -12,8 +12,10 @@ export default function LayerPanel({
   onToggleVisible,
   onToggleLocked,
   onReorder,
+  onImportImage,
 }) {
   const dragIdxRef = useRef(null)
+  const fileRef = useRef(null)
 
   function handleDragStart(idx) {
     dragIdxRef.current = idx
@@ -35,7 +37,21 @@ export default function LayerPanel({
     <div className="left-panel">
       <div className="left-panel-header">
         <span>LAYERS</span>
-        <button onClick={onAdd} title="New Layer">+</button>
+        <div style={{ display: 'flex', gap: 3 }}>
+          <button onClick={onAdd} title="New Layer">+</button>
+          <button className="img-btn" onClick={() => fileRef.current?.click()} title="Import Image">Img</button>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) onImportImage?.(file)
+            e.target.value = ''
+          }}
+        />
       </div>
       <div className="layer-list">
         {layers.map((layer, idx) => (

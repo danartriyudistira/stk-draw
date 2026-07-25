@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react'
-import { getWaveformShape } from '../engine/LfoEngine.js'
+import { getLfoValue, getWaveformShape } from '../engine/LfoEngine.js'
 
-export default function WaveformPreview({ config, width = 200, height = 36 }) {
+export default function WaveformPreview({ config, globalTime = 0, width = 200, height = 36 }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -57,7 +57,31 @@ export default function WaveformPreview({ config, width = 200, height = 36 }) {
     ctx.lineTo(0, height - pad)
     ctx.closePath()
     ctx.fill()
-  }, [config, width, height])
+
+    const phase = ((globalTime * (config.speed || 1)) + (config.phaseOffset || 0)) % 1
+    const dotX = phase * width
+    const currentValue = getLfoValue(globalTime, config, 'preview_dot')
+    const yNorm = range > 0 ? (currentValue - minVal) / range : 0.5
+    const dotY = pad + (height - pad * 2) * (1 - Math.max(0, Math.min(1, yNorm)))
+
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(dotX, dotY, 5, 0, Math.PI * 2)
+    ctx.stroke()
+
+    ctx.fillStyle = '#fff'
+    ctx.beginPath()
+    ctx.arc(dotX, dotY, 3, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = '#fff'
+    ctx.font = '8px monospace'
+    ctx.textAlign = dotX > width / 2 ? 'right' : 'left'
+    const labelX = dotX > width / 2 ? dotX - 8 : dotX + 8
+    const label = currentValue.toFixed(1)
+    ctx.fillText(label, labelX, dotY - 8)
+  }, [config, width, height, globalTime])
 
   return <canvas ref={canvasRef} className="waveform-preview" style={{ width, height }} />
 }

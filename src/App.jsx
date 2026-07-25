@@ -240,6 +240,7 @@ export default function App() {
           <PenLfoPanel
             layer={activeLayer}
             onChange={updateActiveLayer}
+            globalTime={lfoPreviewTime}
           />
           <TransformLfoPanel
             layer={activeLayer}
@@ -247,6 +248,7 @@ export default function App() {
             setOriginMode={setOriginMode}
             onSetOriginMode={() => setSetOriginMode(true)}
             onCancelSetOrigin={() => setSetOriginMode(false)}
+            globalTime={lfoPreviewTime}
           />
         </div>
       </div>

@@ -10,7 +10,7 @@ const WAVEFORMS = [
   { value: 'random', label: 'Random S&H' },
 ]
 
-export default function LfoStrip({ label, config, onConfigChange, disabled }) {
+export default function LfoStrip({ label, config, onConfigChange, disabled, globalTime = 0 }) {
   const easingNames = getEasingNames()
   const lfo = config?.lfo
   const enabled = config?.enabled || false
@@ -125,7 +125,7 @@ export default function LfoStrip({ label, config, onConfigChange, disabled }) {
             Distance
           </label>
         </div>
-        {lfo && <WaveformPreview config={lfo} />}
+        {lfo && <WaveformPreview config={lfo} globalTime={globalTime} />}
       </div>
     </div>
   )

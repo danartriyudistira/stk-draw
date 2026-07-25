@@ -1,6 +1,6 @@
 import LfoStrip from './LfoStrip.jsx'
 
-export default function PenLfoPanel({ layer, onChange }) {
+export default function PenLfoPanel({ layer, onChange, globalTime = 0 }) {
   if (!layer) return null
 
   if (layer.type === 'image') {
@@ -31,11 +31,13 @@ export default function PenLfoPanel({ layer, onChange }) {
         label="thickness"
         config={{ ...pen.thickness, minSliderMin: 0, maxSliderMax: 200 }}
         onConfigChange={updateThickness}
+        globalTime={globalTime}
       />
       <LfoStrip
         label="hue"
         config={{ ...pen.hue, minSliderMin: 0, maxSliderMax: 360 }}
         onConfigChange={updateHue}
+        globalTime={globalTime}
       />
     </div>
   )

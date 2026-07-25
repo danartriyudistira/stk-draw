@@ -12,7 +12,7 @@ const KEY_CONFIG = {
   opacity:  { label: 'Op',    baseMin: 0,    baseMax: 1,   baseStep: 0.01, sliderMinMin: 0,   sliderMaxMax: 1 },
 }
 
-export default function TransformLfoPanel({ layer, onChange, setOriginMode, onSetOriginMode, onCancelSetOrigin }) {
+export default function TransformLfoPanel({ layer, onChange, setOriginMode, onSetOriginMode, onCancelSetOrigin, globalTime = 0 }) {
   if (!layer) return null
 
   function updateTransform(key, newLfoConfig) {
@@ -97,6 +97,7 @@ export default function TransformLfoPanel({ layer, onChange, setOriginMode, onSe
               maxSliderMax: kc.sliderMaxMax,
             }}
             onConfigChange={(newConfig) => updateTransform(key, newConfig)}
+            globalTime={globalTime}
           />
         )
       })}

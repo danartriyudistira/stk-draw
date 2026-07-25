@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, memo } from 'react'
 import './App.css'
 import StageCanvas from './components/StageCanvas.jsx'
 import LayerPanel from './components/LayerPanel.jsx'
@@ -8,9 +8,25 @@ import { createLayer } from './data/defaultLayer.js'
 
 const INITIAL_LAYER = createLayer('Layer 1')
 
+export const globalTimeRef = { current: 0 }
+
 function cloneLayer(layer) {
   return JSON.parse(JSON.stringify(layer))
 }
+
+const ClockDisplay = memo(function ClockDisplay({ className }) {
+  const [t, setT] = useState(0)
+  useEffect(() => {
+    let raf
+    const tick = () => {
+      setT(globalTimeRef.current)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+  return <span className={className}>{t.toFixed(1)}s</span>
+})
 
 export default function App() {
   const [layers, setLayers] = useState([INITIAL_LAYER])
@@ -19,16 +35,16 @@ export default function App() {
   const [setOriginMode, setSetOriginMode] = useState(false)
   const [transformMode, setTransformMode] = useState(false)
   const [statusText, setStatusText] = useState('Ready')
-  const [lfoPreviewTime, setLfoPreviewTime] = useState(0)
-  const globalTimeRef = useRef(0)
   const rafIdRef = useRef(null)
 
   const activeLayer = layers.find((l) => l.id === activeLayerId) || layers[0]
 
   const updateActiveLayer = useCallback((fn) => {
-    setLayers((prev) =>
-      prev.map((l) => (l.id === activeLayerId ? fn(cloneLayer(l)) : l)),
-    )
+    setLayers((prev) => {
+      const layer = prev.find((l) => l.id === activeLayerId)
+      if (!layer) return prev
+      return prev.map((l) => (l.id === activeLayerId ? fn(l) : l))
+    })
   }, [activeLayerId])
 
   useEffect(() => {
@@ -38,7 +54,6 @@ export default function App() {
       const dt = (now - last) / 1000
       last = now
       globalTimeRef.current += dt
-      setLfoPreviewTime(globalTimeRef.current)
       rafIdRef.current = requestAnimationFrame(tick)
     }
     rafIdRef.current = requestAnimationFrame(tick)
@@ -46,35 +61,39 @@ export default function App() {
   }, [isPlaying])
 
   const handleAddLayer = useCallback(() => {
-    const num = layers.length + 1
-    const layer = createLayer(`Layer ${num}`)
-    setLayers((prev) => [...prev, layer])
-    setActiveLayerId(layer.id)
-  }, [layers.length])
+    setLayers((prev) => {
+      const layer = createLayer(`Layer ${prev.length + 1}`)
+      setActiveLayerId(layer.id)
+      return [...prev, layer]
+    })
+  }, [])
 
   const handleDeleteLayer = useCallback(() => {
-    if (layers.length <= 1) return
-    const next = layers.filter((l) => l.id !== activeLayerId)
-    if (next.length === 0) return
-    const deletedIdx = layers.findIndex((l) => l.id === activeLayerId)
-    const newActiveId = next[Math.min(deletedIdx, next.length - 1)].id
-    setLayers(next)
-    setActiveLayerId(newActiveId)
-  }, [layers, activeLayerId])
-
-  const handleDuplicateLayer = useCallback(() => {
-    const src = layers.find((l) => l.id === activeLayerId)
-    if (!src) return
-    const dup = cloneLayer(src)
-    dup.id = crypto.randomUUID?.() || `layer-${Date.now()}-${Math.random()}`
-    dup.name = `${src.name} copy`
-    const idx = layers.findIndex((l) => l.id === activeLayerId)
     setLayers((prev) => {
-      const next = [...prev]
-      next.splice(idx + 1, 0, dup)
+      if (prev.length <= 1) return prev
+      const deletedIdx = prev.findIndex((l) => l.id === activeLayerId)
+      const next = prev.filter((l) => l.id !== activeLayerId)
+      if (next.length > 0) {
+        const newId = next[Math.min(deletedIdx, next.length - 1)].id
+        setActiveLayerId(newId)
+      }
       return next
     })
-    setActiveLayerId(dup.id)
+  }, [activeLayerId])
+
+  const handleDuplicateLayer = useCallback(() => {
+    setLayers((prev) => {
+      const src = prev.find((l) => l.id === activeLayerId)
+      if (!src) return prev
+      const dup = cloneLayer(src)
+      dup.id = crypto.randomUUID?.() || `layer-${Date.now()}-${Math.random()}`
+      dup.name = `${src.name} copy`
+      const idx = prev.findIndex((l) => l.id === activeLayerId)
+      const next = [...prev]
+      next.splice(idx + 1, 0, dup)
+      setActiveLayerId(dup.id)
+      return next
+    })
   }, [activeLayerId])
 
   const handleRenameLayer = useCallback((id, name) => {
@@ -119,6 +138,7 @@ export default function App() {
       const oldOy = layer.origin?.y ?? 0
       const dx = oldOx - x
       const dy = oldOy - y
+      if (dx === 0 && dy === 0) return layer
       return {
         ...layer,
         origin: { x, y },
@@ -148,9 +168,10 @@ export default function App() {
 
   const handleImportImage = useCallback((file) => {
     if (!file) return
-
+    const url = URL.createObjectURL(file)
     const img = new Image()
     img.onload = () => {
+      URL.revokeObjectURL(url)
       const maxW = 1280
       const scale = Math.min(1, maxW / img.width)
       const w = Math.round(img.width * scale)
@@ -162,14 +183,14 @@ export default function App() {
         hue: { enabled: false, lfo: null },
       }
       layer.type = 'image'
-      layer.src = img.src
+      layer.src = url
       layer.imgW = w
       layer.imgH = h
       setLayers((prev) => [...prev, layer])
       setActiveLayerId(layer.id)
       setStatusText(`Imported: ${file.name} (${w}x${h})`)
     }
-    img.src = URL.createObjectURL(file)
+    img.src = url
   }, [])
 
   const handleReorderLayers = useCallback((fromIdx, toIdx) => {
@@ -180,6 +201,9 @@ export default function App() {
       return next
     })
   }, [])
+
+  const handleSetOriginMode = useCallback(() => setSetOriginMode(true), [])
+  const handleCancelSetOrigin = useCallback(() => setSetOriginMode(false), [])
 
   return (
     <div className="app">
@@ -194,9 +218,7 @@ export default function App() {
           {transformMode ? '✋ Hand' : '↕ Move'}
         </button>
         <button onClick={handleExportPNG}>↓ PNG</button>
-        <span style={{ fontSize: 10, color: '#666', marginLeft: 8, fontFamily: 'monospace' }}>
-          {lfoPreviewTime.toFixed(1)}s
-        </span>
+        <ClockDisplay className="toolbar-clock" />
       </div>
 
       <div className="main">
@@ -215,31 +237,28 @@ export default function App() {
         />
 
         <div className="stage-area">
-            <StageCanvas
-              layers={layers}
-              activeLayerId={activeLayerId}
-              setOriginMode={setOriginMode}
-              transformMode={transformMode}
-              onSetOrigin={handleSetOrigin}
-              onAddStroke={handleAddStroke}
-              onUpdateTransformBase={updateActiveLayer}
-              globalTime={lfoPreviewTime}
-            />
+          <StageCanvas
+            layers={layers}
+            activeLayerId={activeLayerId}
+            setOriginMode={setOriginMode}
+            transformMode={transformMode}
+            onSetOrigin={handleSetOrigin}
+            onAddStroke={handleAddStroke}
+            onUpdateTransformBase={updateActiveLayer}
+          />
         </div>
 
         <div className="right-panel">
           <PenLfoPanel
             layer={activeLayer}
             onChange={updateActiveLayer}
-            globalTime={lfoPreviewTime}
           />
           <TransformLfoPanel
             layer={activeLayer}
             onChange={updateActiveLayer}
             setOriginMode={setOriginMode}
-            onSetOriginMode={() => setSetOriginMode(true)}
-            onCancelSetOrigin={() => setSetOriginMode(false)}
-            globalTime={lfoPreviewTime}
+            onSetOriginMode={handleSetOriginMode}
+            onCancelSetOrigin={handleCancelSetOrigin}
           />
         </div>
       </div>
@@ -248,7 +267,7 @@ export default function App() {
         <span>{statusText}</span>
         <span>Layer: {activeLayer?.name || '—'}</span>
         <span>Strokes: {activeLayer?.strokes.length || 0}</span>
-        <span className="status-phase">Time: {lfoPreviewTime.toFixed(2)}s</span>
+        <ClockDisplay className="status-phase" />
       </div>
     </div>
   )

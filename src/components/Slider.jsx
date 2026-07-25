@@ -1,26 +1,30 @@
-import { useRef, useCallback, useEffect, useState } from 'react'
+import { useRef, useCallback, useEffect, useState, memo } from 'react'
 
-export default function Slider({ value, min, max, step, onChange, className, disabled }) {
+function Slider({ value, min, max, step, onChange, className, disabled }) {
   const trackRef = useRef(null)
   const draggingRef = useRef(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
   const inputRef = useRef(null)
+  const valsRef = useRef({ value, min, max, step, onChange })
+  valsRef.current = { value, min, max, step, onChange }
 
   const range = max - min || 1
   const frac = Math.max(0, Math.min(1, (value - min) / range))
 
   const computeValue = useCallback((clientX) => {
     const track = trackRef.current
-    if (!track) return value
+    const v = valsRef.current
+    if (!track) return v.value
     const rect = track.getBoundingClientRect()
     let f = (clientX - rect.left) / rect.width
     f = Math.max(0, Math.min(1, f))
-    const raw = min + f * range
-    if (step === 0 || step == null) return raw
-    const stepped = Math.round((raw - min) / step) * step + min
-    return Math.max(min, Math.min(max, stepped))
-  }, [min, max, range, step, value])
+    const r = v.max - v.min || 1
+    const raw = v.min + f * r
+    if (v.step === 0 || v.step == null) return raw
+    const stepped = Math.round((raw - v.min) / v.step) * v.step + v.min
+    return Math.max(v.min, Math.min(v.max, stepped))
+  }, [])
 
   const cleanupRef = useRef(null)
 
@@ -45,7 +49,7 @@ export default function Slider({ value, min, max, step, onChange, className, dis
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', handlePointerUp)
     cleanupRef.current = handlePointerUp
-  }, [disabled, computeValue, onChange])
+  }, [disabled, onChange])
 
   useEffect(() => {
     return () => {
@@ -56,18 +60,20 @@ export default function Slider({ value, min, max, step, onChange, className, dis
   const handleWheel = useCallback((e) => {
     if (disabled) return
     e.preventDefault()
-    const stepSize = step || range / 100
+    const v = valsRef.current
+    const r = v.max - v.min || 1
+    const stepSize = v.step || r / 100
     const dir = e.deltaY > 0 ? -1 : 1
     const delta = dir * stepSize
-    const raw = value + delta
-    const clamped = Math.max(min, Math.min(max, raw))
-    if (step === 0 || step == null) {
-      onChange?.(clamped)
+    const raw = v.value + delta
+    const clamped = Math.max(v.min, Math.min(v.max, raw))
+    if (v.step === 0 || v.step == null) {
+      v.onChange?.(clamped)
     } else {
-      const stepped = Math.round((clamped - min) / step) * step + min
-      onChange?.(Math.max(min, Math.min(max, stepped)))
+      const stepped = Math.round((clamped - v.min) / v.step) * v.step + v.min
+      v.onChange?.(Math.max(v.min, Math.min(v.max, stepped)))
     }
-  }, [disabled, min, max, step, range, value, onChange])
+  }, [disabled])
 
   useEffect(() => {
     const el = trackRef.current
@@ -126,3 +132,5 @@ export default function Slider({ value, min, max, step, onChange, className, dis
     </div>
   )
 }
+
+export default memo(Slider)

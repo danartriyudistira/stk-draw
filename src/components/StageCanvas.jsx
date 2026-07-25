@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react'
 import { renderStroke } from '../engine/StrokeRenderer.js'
 import { getLfoValue } from '../engine/LfoEngine.js'
+import { globalTimeRef as sharedTimeRef } from '../App.jsx'
 
 export default function StageCanvas({
   layers,
@@ -10,7 +11,6 @@ export default function StageCanvas({
   onSetOrigin,
   onAddStroke,
   onUpdateTransformBase,
-  globalTime,
 }) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
@@ -19,7 +19,6 @@ export default function StageCanvas({
   const distanceRef = useRef(0)
   const layersRef = useRef(layers)
   const activeLayerIdRef = useRef(activeLayerId)
-  const globalTimeRef = useRef(globalTime)
   const setOriginModeRef = useRef(setOriginMode)
   const transformModeRef = useRef(transformMode)
   const strokeStartTimeRef = useRef(0)
@@ -31,7 +30,6 @@ export default function StageCanvas({
 
   layersRef.current = layers
   activeLayerIdRef.current = activeLayerId
-  globalTimeRef.current = globalTime
   setOriginModeRef.current = setOriginMode
   transformModeRef.current = transformMode
 
@@ -57,6 +55,28 @@ export default function StageCanvas({
 
     let dpr = window.devicePixelRatio || 1
     let cw, ch
+    let gridCanvas = null
+
+    const ctx = canvas.getContext('2d')
+
+    const buildGridCanvas = () => {
+      const gc = document.createElement('canvas')
+      gc.width = cw
+      gc.height = ch
+      const gctx = gc.getContext('2d')
+      gctx.strokeStyle = '#222'
+      gctx.lineWidth = 0.5
+      const gridSize = 50
+      const offsetX = (cw / 2) % gridSize
+      const offsetY = (ch / 2) % gridSize
+      for (let gx = -offsetX; gx < cw; gx += gridSize) {
+        gctx.beginPath(); gctx.moveTo(gx, 0); gctx.lineTo(gx, ch); gctx.stroke()
+      }
+      for (let gy = -offsetY; gy < ch; gy += gridSize) {
+        gctx.beginPath(); gctx.moveTo(0, gy); gctx.lineTo(cw, gy); gctx.stroke()
+      }
+      return gc
+    }
 
     const resize = () => {
       dpr = window.devicePixelRatio || 1
@@ -66,6 +86,7 @@ export default function StageCanvas({
       canvas.height = ch * dpr
       canvas.style.width = `${cw}px`
       canvas.style.height = `${ch}px`
+      gridCanvas = buildGridCanvas()
     }
     resize()
 
@@ -116,58 +137,54 @@ export default function StageCanvas({
     }
 
     const renderFrame = () => {
-      const ctx = canvas.getContext('2d')
       ctx.save()
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, cw, ch)
       ctx.fillStyle = '#111'
       ctx.fillRect(0, 0, cw, ch)
 
-      ctx.save()
-      ctx.strokeStyle = '#222'
-      ctx.lineWidth = 0.5
-      const gridSize = 50
-      const offsetX = (cw / 2) % gridSize
-      const offsetY = (ch / 2) % gridSize
-      for (let gx = -offsetX; gx < cw; gx += gridSize) {
-        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, ch); ctx.stroke()
-      }
-      for (let gy = -offsetY; gy < ch; gy += gridSize) {
-        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cw, gy); ctx.stroke()
-      }
-      ctx.restore()
+      if (gridCanvas) ctx.drawImage(gridCanvas, 0, 0)
 
       ctx.translate(cw / 2, ch / 2)
 
-      const time = globalTimeRef.current
+      const time = sharedTimeRef.current
       const ls = layersRef.current
       const aid = activeLayerIdRef.current
 
+      const tfComputed = new Map()
       for (const layer of ls) {
         if (!layer.visible) continue
+        const tf = layer.transform
+        const x = tf.x.lfo ? getLfoValue(time, tf.x.lfo, `${layer.id}_x`) : tf.x.base
+        const y = tf.y.lfo ? getLfoValue(time, tf.y.lfo, `${layer.id}_y`) : tf.y.base
+        const rot = tf.rotation.lfo ? getLfoValue(time, tf.rotation.lfo, `${layer.id}_rot`) : tf.rotation.base
+        const sxVal = tf.scaleX.lfo ? getLfoValue(time, tf.scaleX.lfo, `${layer.id}_sx`) : tf.scaleX.base
+        const sx = isNaN(sxVal) ? tf.scaleX.base : sxVal
+        const syVal = tf.scaleY.linkToScaleX
+          ? sx
+          : (tf.scaleY.lfo ? getLfoValue(time, tf.scaleY.lfo, `${layer.id}_sy`) : tf.scaleY.base)
+        const sy = isNaN(syVal) ? tf.scaleY.base : syVal
+        const opVal = tf.opacity.lfo ? getLfoValue(time, tf.opacity.lfo, `${layer.id}_op`) : tf.opacity.base
+        const op = isNaN(opVal) ? tf.opacity.base : Math.max(0, Math.min(1, opVal))
+        tfComputed.set(layer.id, { x, y, rot, sx, sy, op })
+      }
+
+      for (const layer of ls) {
+        if (!layer.visible) continue
+
+        const tfc = tfComputed.get(layer.id)
+        if (!tfc) continue
 
         const tf = layer.transform
         const ox = layer.origin?.x ?? 0
         const oy = layer.origin?.y ?? 0
 
-        const x = tf.x.lfo ? getLfoValue(time, tf.x.lfo, `${layer.id}_x`) : tf.x.base
-        const y = tf.y.lfo ? getLfoValue(time, tf.y.lfo, `${layer.id}_y`) : tf.y.base
-        const rot = tf.rotation.lfo ? getLfoValue(time, tf.rotation.lfo, `${layer.id}_rot`) : tf.rotation.base
-        const sxValue = tf.scaleX.lfo ? getLfoValue(time, tf.scaleX.lfo, `${layer.id}_sx`) : tf.scaleX.base
-        const sx = isNaN(sxValue) ? tf.scaleX.base : sxValue
-        const syValue = tf.scaleY.linkToScaleX
-          ? sx
-          : (tf.scaleY.lfo ? getLfoValue(time, tf.scaleY.lfo, `${layer.id}_sy`) : tf.scaleY.base)
-        const sy = isNaN(syValue) ? tf.scaleY.base : syValue
-        const opValue = tf.opacity.lfo ? getLfoValue(time, tf.opacity.lfo, `${layer.id}_op`) : tf.opacity.base
-        const op = isNaN(opValue) ? tf.opacity.base : Math.max(0, Math.min(1, opValue))
-
         ctx.save()
-        ctx.globalAlpha = Math.max(0, Math.min(1, op))
-        ctx.translate(x, y)
+        ctx.globalAlpha = Math.max(0, Math.min(1, tfc.op))
+        ctx.translate(tfc.x, tfc.y)
         ctx.translate(ox, oy)
-        ctx.rotate((rot * Math.PI) / 180)
-        ctx.scale(Math.max(0.01, sx), Math.max(0.01, sy))
+        ctx.rotate((tfc.rot * Math.PI) / 180)
+        ctx.scale(Math.max(0.01, tfc.sx), Math.max(0.01, tfc.sy))
 
         if (layer.type === 'image' && layer.src && layer.imgW && layer.imgH) {
           let entry = imageCacheRef.current.get(layer.id)
@@ -196,7 +213,7 @@ export default function StageCanvas({
         if (layer.id === aid) {
           ctx.save()
           ctx.globalAlpha = 0.7
-          ctx.translate(x, y)
+          ctx.translate(tfc.x, tfc.y)
           ctx.translate(ox, oy)
           ctx.strokeStyle = '#4fc3f7'
           ctx.lineWidth = 1.5
@@ -214,24 +231,18 @@ export default function StageCanvas({
       if (transformModeRef.current) {
         const aLayer = ls.find((l) => l.id === aid)
         if (aLayer) {
-          const bbox = computeLayerBbox(aLayer)
-          if (bbox) {
-            const tf = aLayer.transform
-            const ox = aLayer.origin?.x ?? 0
-            const oy = aLayer.origin?.y ?? 0
-            const tx = tf.x.lfo ? getLfoValue(time, tf.x.lfo, `${aLayer.id}_x`) : tf.x.base
-            const ty = tf.y.lfo ? getLfoValue(time, tf.y.lfo, `${aLayer.id}_y`) : tf.y.base
-            const rot = tf.rotation.lfo ? getLfoValue(time, tf.rotation.lfo, `${aLayer.id}_rot`) : tf.rotation.base
-            const sxf = tf.scaleX.lfo ? getLfoValue(time, tf.scaleX.lfo, `${aLayer.id}_sx`) : tf.scaleX.base
-            const syf = tf.scaleY.linkToScaleX ? sxf : (tf.scaleY.lfo ? getLfoValue(time, tf.scaleY.lfo, `${aLayer.id}_sy`) : tf.scaleY.base)
-            const sx = isNaN(sxf) ? tf.scaleX.base : sxf
-            const sy = isNaN(syf) ? tf.scaleY.base : syf
-
-            ctx.save()
-            ctx.translate(tx, ty)
-            ctx.translate(ox, oy)
-            ctx.rotate((rot * Math.PI) / 180)
-            ctx.scale(Math.max(0.01, sx), Math.max(0.01, sy))
+          const tfcActive = tfComputed.get(aLayer.id)
+          if (tfcActive) {
+            const bbox = computeLayerBbox(aLayer)
+            if (bbox) {
+              const ox = aLayer.origin?.x ?? 0
+              const oy = aLayer.origin?.y ?? 0
+            
+              ctx.save()
+              ctx.translate(tfcActive.x, tfcActive.y)
+              ctx.translate(ox, oy)
+              ctx.rotate((tfcActive.rot * Math.PI) / 180)
+              ctx.scale(Math.max(0.01, tfcActive.sx), Math.max(0.01, tfcActive.sy))
 
             const cx = (bbox.minX + bbox.maxX) / 2
             const cy = (bbox.minY + bbox.maxY) / 2
@@ -263,34 +274,26 @@ export default function StageCanvas({
           }
         }
       }
+      }
 
       if (drawingRef.current) {
         const pts = currentStrokeRef.current
         if (pts.length > 0) {
           const aLayer = ls.find((l) => l.id === aid)
           if (aLayer) {
-            const tf = aLayer.transform
-            const ox = aLayer.origin?.x ?? 0
-            const oy = aLayer.origin?.y ?? 0
-
-            const ax = tf.x.lfo ? getLfoValue(time, tf.x.lfo, `${aLayer.id}_x`) : tf.x.base
-            const ay = tf.y.lfo ? getLfoValue(time, tf.y.lfo, `${aLayer.id}_y`) : tf.y.base
-            const arot = tf.rotation.lfo ? getLfoValue(time, tf.rotation.lfo, `${aLayer.id}_rot`) : tf.rotation.base
-            const asxVal = tf.scaleX.lfo ? getLfoValue(time, tf.scaleX.lfo, `${aLayer.id}_sx`) : tf.scaleX.base
-            const asx = isNaN(asxVal) ? tf.scaleX.base : asxVal
-            const asyVal = tf.scaleY.linkToScaleX
-              ? asx
-              : (tf.scaleY.lfo ? getLfoValue(time, tf.scaleY.lfo, `${aLayer.id}_sy`) : tf.scaleY.base)
-            const asy = isNaN(asyVal) ? tf.scaleY.base : asyVal
-
-            ctx.save()
-            ctx.globalAlpha = Math.max(0, Math.min(1, tf.opacity.base))
-            ctx.translate(ax, ay)
-            ctx.translate(ox, oy)
-            ctx.rotate((arot * Math.PI) / 180)
-            ctx.scale(Math.max(0.01, asx), Math.max(0.01, asy))
-            renderStroke(ctx, pts)
-            ctx.restore()
+            const tfcDraw = tfComputed.get(aLayer.id)
+            if (tfcDraw) {
+              const ox = aLayer.origin?.x ?? 0
+              const oy = aLayer.origin?.y ?? 0
+              ctx.save()
+              ctx.globalAlpha = Math.max(0, Math.min(1, aLayer.transform.opacity.base))
+              ctx.translate(tfcDraw.x, tfcDraw.y)
+              ctx.translate(ox, oy)
+              ctx.rotate((tfcDraw.rot * Math.PI) / 180)
+              ctx.scale(Math.max(0.01, tfcDraw.sx), Math.max(0.01, tfcDraw.sy))
+              renderStroke(ctx, pts)
+              ctx.restore()
+            }
           }
         }
       }
@@ -336,7 +339,7 @@ export default function StageCanvas({
 
     drawingRef.current = true
     distanceRef.current = 0
-    strokeStartTimeRef.current = globalTimeRef.current
+    strokeStartTimeRef.current = sharedTimeRef.current
     currentStrokeRef.current = []
 
     const pos = getCanvasPos(e)
@@ -344,14 +347,14 @@ export default function StageCanvas({
     const oy = layer.origin?.y ?? 0
     const lx = pos.x - ox
     const ly = pos.y - oy
-    const thickness = getPenLfoVal(layer, 'thickness', globalTimeRef.current, 0)
-    const hue = getPenLfoVal(layer, 'hue', globalTimeRef.current, 0)
+    const thickness = getPenLfoVal(layer, 'thickness', sharedTimeRef.current, 0)
+    const hue = getPenLfoVal(layer, 'hue', sharedTimeRef.current, 0)
 
     currentStrokeRef.current.push({
       x: lx, y: ly,
       thickness: isNaN(thickness) ? 4 : thickness,
       hue: isNaN(hue) ? 200 : hue,
-      time: globalTimeRef.current,
+      time: sharedTimeRef.current,
       distance: 0,
     })
   }, [getCanvasPos, onSetOrigin, getActiveLayer])
@@ -391,14 +394,14 @@ export default function StageCanvas({
     const segLen = Math.sqrt(dx * dx + dy * dy)
     distanceRef.current += segLen
 
-    const thickness = getPenLfoVal(layer, 'thickness', globalTimeRef.current, distanceRef.current)
-    const hue = getPenLfoVal(layer, 'hue', globalTimeRef.current, distanceRef.current)
+    const thickness = getPenLfoVal(layer, 'thickness', sharedTimeRef.current, distanceRef.current)
+    const hue = getPenLfoVal(layer, 'hue', sharedTimeRef.current, distanceRef.current)
 
     currentStrokeRef.current.push({
       x: lx, y: ly,
       thickness: isNaN(thickness) ? 4 : thickness,
       hue: isNaN(hue) ? 200 : hue,
-      time: globalTimeRef.current,
+      time: sharedTimeRef.current,
       distance: distanceRef.current,
     })
   }, [getCanvasPos, getActiveLayer, onUpdateTransformBase])

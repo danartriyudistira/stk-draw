@@ -114,6 +114,18 @@ export default function PenLfoPanel({ layer, onChange }) {
   return (
     <div className="panel-section">
       <div className="panel-section-label">Pen LFO</div>
+      <div className="transform-row">
+        <span className="tr-label"></span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, color: '#888' }}>
+          <input
+            type="checkbox"
+            checked={layer.smoothEnabled !== false}
+            onChange={(e) => onChange((l) => ({ ...l, smoothEnabled: e.target.checked }))}
+            style={{ margin: 0, accentColor: '#4fc3f7' }}
+          />
+          Smooth
+        </label>
+      </div>
       <LfoStrip
         label="thickness"
         config={{ ...pen.thickness, minSliderMin: 0, maxSliderMax: 200 }}

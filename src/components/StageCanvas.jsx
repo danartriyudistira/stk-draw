@@ -4,6 +4,7 @@ import { getLfoValue } from '../engine/LfoEngine.js'
 import { globalTimeRef as sharedTimeRef } from '../App.jsx'
 import { Point, Path, Animator, renderKineticPath, renderKineticParticles, MIN_DISTANCE, LINE_THICKNESS } from '../engine/KineticEngine.js'
 import { ShaderLayerRenderer } from '../engine/ShaderLayerRenderer.js'
+import { buildContinuousTimeline } from '../engine/LoopDrawTimeline.js'
 
 function useLfo(lfo) {
   return lfo && lfo.waveform !== 'none'
@@ -109,6 +110,18 @@ export default function StageCanvas({
     }
     result.push(points[points.length - 1])
     return result
+  }
+
+  function getLoopDrawState(layer) {
+    if (!layer.loopDrawEnabled) return null
+    const timeline = buildContinuousTimeline(layer.strokes || [])
+    if (timeline.totalDuration <= 0) return null
+    const contTime = (layer.loopDrawPosition || 0) * timeline.totalDuration
+    const entryByStroke = {}
+    for (const e of timeline.entries) {
+      entryByStroke[e.strokeIdx] = e
+    }
+    return { contTime, entryByStroke }
   }
 
   const cursorWorldRef = useRef({ x: 0, y: 0, active: false })
@@ -391,13 +404,28 @@ export default function StageCanvas({
         }
       } else if (!isGroup) {
         const cache = ensureCache(layer)
-        if (cache.canvas) {
+        const ld = getLoopDrawState(layer)
+        if (cache.canvas && ld == null) {
           ctx.drawImage(cache.canvas, cache.ox, cache.oy)
         } else {
-          for (const stroke of layer.strokes) {
-            if (stroke.points && stroke.points.length > 0) {
-              renderStroke(ctx, stroke.points)
+          for (let si = 0; si < layer.strokes.length; si++) {
+            const stroke = layer.strokes[si]
+            if (!stroke.points || !stroke.points.length) continue
+            let pts = stroke.points
+            if (ld) {
+              const entry = ld.entryByStroke[si]
+              if (entry) {
+                const elapsed = ld.contTime - entry.contStart
+                if (elapsed <= 0) continue
+                if (elapsed < entry.duration) {
+                  const cutoff = entry.firstAbsTime + elapsed
+                  pts = pts.filter((p) => p.time != null && p.time <= cutoff)
+                }
+              } else {
+                continue
+              }
             }
+            if (pts.length > 0) renderStroke(ctx, pts)
           }
         }
       } else {
@@ -1181,8 +1209,10 @@ export default function StageCanvas({
     }
 
     if (currentStrokeRef.current.length > 0) {
-      const smoothed = smoothStroke([...currentStrokeRef.current])
-      onAddStroke(smoothed)
+      const layer = getActiveLayer()
+      const raw = [...currentStrokeRef.current]
+      const pts = layer?.smoothEnabled !== false ? smoothStroke(raw) : raw
+      onAddStroke(pts)
       currentStrokeRef.current = []
       distanceRef.current = 0
     }

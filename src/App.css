@@ -968,6 +968,95 @@
   border-radius: 1px;
 }
 
+.loop-draw-enable-btn {
+  padding: 4px 12px;
+  font-size: 10px;
+  font-weight: 600;
+  background: #2a3a4a;
+  color: #4fc3f7;
+  border: 1px solid #3a5a6a;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.loop-draw-enable-btn:hover {
+  background: #3a4a5a;
+}
+
+.loop-draw-off-btn {
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.loop-draw-play-btn {
+  padding: 4px 18px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #2a3a4a;
+  color: #4fc3f7;
+  border: 1px solid #3a5a6a;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.loop-draw-play-btn:hover {
+  background: #3a4a5a;
+}
+
+.loop-draw-play-btn.playing {
+  background: #bb86fc;
+  color: #111;
+  border-color: #bb86fc;
+}
+
+.loop-draw-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.loop-draw-mode-label {
+  font-size: 10px;
+  color: #777;
+  min-width: 36px;
+  flex-shrink: 0;
+}
+
+.loop-draw-mode-tabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid #333;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.loop-draw-mode-btn {
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  background: #1a1a1a;
+  color: #666;
+  border: none;
+  cursor: pointer;
+  flex: 1;
+}
+
+.loop-draw-mode-btn + .loop-draw-mode-btn {
+  border-left: 1px solid #333;
+}
+
+.loop-draw-mode-btn:hover {
+  color: #aaa;
+  background: #2a2a2a;
+}
+
+.loop-draw-mode-btn.active {
+  background: #4fc3f7;
+  color: #111;
+}
+
 .shader-param-error {
   margin-bottom: 8px;
   padding: 6px 8px;

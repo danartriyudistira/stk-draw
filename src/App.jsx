@@ -7,6 +7,7 @@ import KineticPanel from './components/KineticPanel.jsx'
 import FramePanel from './components/FramePanel.jsx'
 import TransformLfoPanel from './components/TransformLfoPanel.jsx'
 import ShaderParamPanel from './components/ShaderParamPanel.jsx'
+import DrawLoopPanel from './components/DrawLoopPanel.jsx'
 import { createLayer, createGroup, createKineticLayer, createFrameLayer, createShaderLayer, deepCloneSubtree, collectDescendantIds } from './data/defaultLayer.js'
 import ShaderCodeEditor from './components/ShaderCodeEditor.jsx'
 
@@ -556,6 +557,12 @@ export default function App() {
         </div>
 
         <div className="right-panel">
+          {activeLayer?.type !== 'shader' && activeLayer?.type !== 'kinetic' && activeLayer?.type !== 'frame' && activeLayer?.strokes?.length > 0 && (
+            <DrawLoopPanel
+              layer={activeLayer}
+              onChange={updateActiveLayer}
+            />
+          )}
           {activeLayer?.type === 'shader' ? (
             <>
               <ShaderParamPanel
@@ -594,10 +601,12 @@ export default function App() {
           ) : drawMode ? (
             <>
               {activeLayer?.type !== 'kinetic' && (
-                <PenLfoPanel
-                  layer={activeLayer}
-                  onChange={updateActiveLayer}
-                />
+                <>
+                  <PenLfoPanel
+                    layer={activeLayer}
+                    onChange={updateActiveLayer}
+                  />
+                </>
               )}
               {activeLayer?.type === 'kinetic' && (
                 <KineticPanel

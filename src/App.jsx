@@ -99,6 +99,8 @@ export default function App() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorHeight, setEditorHeight] = useState(240)
   const [shaderCompileErrors, setShaderCompileErrors] = useState({})
+  const [workspaceFullscreen, setWorkspaceFullscreen] = useState(false)
+  const [perfMode, setPerfMode] = useState(false)
   const rafIdRef = useRef(null)
   const popupRef = useRef(null)
   const undoStacksRef = useRef({})
@@ -125,14 +127,30 @@ export default function App() {
   }, [])
 
   const broadcastRef = useRef({ layers, activeLayerId, drawMode, bgColor, outputRect, aspectRatio })
+  const broadcastPrevRef = useRef(null)
   broadcastRef.current = { layers, activeLayerId, drawMode, bgColor, outputRect, aspectRatio }
 
   useEffect(() => {
     const channel = new BroadcastChannel('stk-draw-sync')
     let raf
+    let frameCount = 0
     const tick = () => {
+      frameCount++
+      if (frameCount % 4 !== 0) { raf = requestAnimationFrame(tick); return }
       const s = broadcastRef.current
-      channel.postMessage({ type: 'state', ...JSON.parse(JSON.stringify(s)) })
+      const prev = broadcastPrevRef.current
+      const changed = !prev ||
+        prev.activeLayerId !== s.activeLayerId ||
+        prev.drawMode !== s.drawMode ||
+        prev.bgColor !== s.bgColor ||
+        prev.outputRect?.w !== s.outputRect?.w ||
+        prev.outputRect?.h !== s.outputRect?.h ||
+        prev.aspectRatio !== s.aspectRatio ||
+        prev.layers !== s.layers
+      if (changed) {
+        broadcastPrevRef.current = { ...s, layers: s.layers }
+        channel.postMessage({ type: 'state', ...JSON.parse(JSON.stringify(s)) })
+      }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -479,6 +497,10 @@ export default function App() {
   const handleSetOriginMode = useCallback(() => setSetOriginMode(true), [])
   const handleCancelSetOrigin = useCallback(() => setSetOriginMode(false), [])
 
+  const handleToggleWorkspaceFS = useCallback(() => {
+    setWorkspaceFullscreen((v) => !v)
+  }, [])
+
   useEffect(() => {
     const handler = (e) => {
       const tg = e.target
@@ -496,6 +518,8 @@ export default function App() {
         handleClearLayer()
       } else if (ctrl && e.key === 's') {
         e.preventDefault(); handleExportPNG()
+      } else if (e.key === 'f' || e.key === 'F') {
+        if (!inInput) { e.preventDefault(); setWorkspaceFullscreen((v) => !v) }
       }
     }
     window.addEventListener('keydown', handler)
@@ -504,6 +528,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {!workspaceFullscreen && (
       <div className="toolbar">
         <span className="toolbar-title">STK DRAW</span>
         <button className={isPlaying ? 'playing' : ''} onClick={() => setIsPlaying(!isPlaying)}>
@@ -516,11 +541,60 @@ export default function App() {
         </button>
         <button onClick={handleExportPNG}>↓ PNG</button>
         <button onClick={handlePopout} title="Pop out canvas to separate window">⛶ Popout</button>
+        <button onClick={handleToggleWorkspaceFS} title="Toggle workspace fullscreen (F)">⛶ WS</button>
+        <button className={perfMode ? 'active' : ''} onClick={() => setPerfMode((v) => !v)} title="Live performance mode">⚡ Perf</button>
 
         <ClockDisplay className="toolbar-clock" />
       </div>
+      )}
 
-      <div className="main">
+      {workspaceFullscreen ? (
+        <div className="main" style={{ flex: 1 }}>
+          <div className="stage-area" style={{ flex: 1 }}>
+            <StageCanvas
+              layers={layers}
+              activeLayerId={activeLayerId}
+              setOriginMode={setOriginMode}
+              drawMode={drawMode}
+              onSetOrigin={handleSetOrigin}
+              onAddStroke={handleAddStroke}
+              onUpdateTransformBase={updateActiveLayer}
+              onUpdateLayer={updateActiveLayer}
+              bgColor="#000000"
+              outputRect={outputRect}
+              onSetOutputRect={(rect) => handleUpdateFrame((l) => ({ frameRect: rect }))}
+              aspectRatio={aspectRatio}
+              onSetAspectRatio={(ar) => handleUpdateFrame((l) => ({ aspectRatio: ar }))}
+              onShaderCompileResult={handleShaderCompileResult}
+              showGrid={false}
+              perfMode={perfMode}
+            />
+          </div>
+          <ShaderCodeEditor
+            key={activeLayerId}
+            code={activeLayer?.type === 'shader' ? activeLayer.code : ''}
+            onChange={handleShaderCodeChange}
+            onRefresh={handleShaderRefresh}
+            onApplyShader={handleApplyShader}
+            layerName={activeLayer?.type === 'shader' ? activeLayer.name : ''}
+            open={editorOpen && activeLayer?.type === 'shader'}
+            onToggle={handleEditorToggle}
+            error={activeLayer?.type === 'shader' ? shaderCompileErrors[activeLayer.id] : null}
+            height={editorHeight}
+            onResize={setEditorHeight}
+            layers={layers}
+          />
+          <button
+            className="workspace-fs-exit"
+            onClick={handleToggleWorkspaceFS}
+            title="Exit workspace fullscreen (F)"
+          >
+            ✕ Exit Fullscreen
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="main">
         <LayerPanel
           layers={layers}
           activeLayerId={activeLayerId}
@@ -558,6 +632,7 @@ export default function App() {
             aspectRatio={aspectRatio}
             onSetAspectRatio={(ar) => handleUpdateFrame((l) => ({ aspectRatio: ar }))}
             onShaderCompileResult={handleShaderCompileResult}
+            perfMode={perfMode}
           />
           <ShaderCodeEditor
             key={activeLayerId}
@@ -658,7 +733,6 @@ export default function App() {
           )}
         </div>
       </div>
-
       <div className="status-bar">
         <span>{statusText}</span>
         <span>Layer: {activeLayer?.name || '—'}</span>
@@ -674,6 +748,8 @@ export default function App() {
         </label>
         <ClockDisplay className="status-phase" />
       </div>
+    </>
+      )}
     </div>
   )
 }

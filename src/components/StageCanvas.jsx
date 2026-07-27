@@ -46,6 +46,7 @@ export default function StageCanvas({
   aspectRatio = 'free',
   isOutputView = false,
   onShaderCompileResult = null,
+  perfMode = false,
 }) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
@@ -85,7 +86,7 @@ export default function StageCanvas({
     const result = [points[0]]
     const half = Math.floor(SMOOTH_WINDOW / 2)
     for (let i = 1; i < points.length - 1; i++) {
-      let sumX = 0, sumY = 0, sumT = 0, sumH = 0, sumS = 0, sumL = 0, sumD = 0
+      let sumX = 0, sumY = 0, sumT = 0, sumH = 0, sumS = 0, sumL = 0, sumD = 0, sumO = 0
       let count = 0
       for (let j = Math.max(0, i - half); j <= Math.min(points.length - 1, i + half); j++) {
         sumX += points[j].x
@@ -95,6 +96,7 @@ export default function StageCanvas({
         sumS += points[j].saturation || 70
         sumL += points[j].lightness || 50
         sumD += points[j].distance || 0
+        sumO += points[j].opacity ?? 100
         count++
       }
       result.push({
@@ -104,6 +106,7 @@ export default function StageCanvas({
         hue: sumH / count,
         saturation: sumS / count,
         lightness: sumL / count,
+        opacity: sumO / count,
         time: points[i].time,
         distance: sumD / count,
       })
@@ -134,8 +137,10 @@ export default function StageCanvas({
   const aspectRatioRef = useRef(aspectRatio)
   const isOutputViewRef = useRef(isOutputView)
   const isFrameActiveRef = useRef(false)
+  const perfModeRef = useRef(perfMode)
   const shaderRenderersRef = useRef(new Map())
   const shaderMetaRef = useRef(new Map())
+  const shaderDebounceRef = useRef(new Map())
   const onShaderCompileResultRef = useRef(null)
 
   useEffect(() => {
@@ -177,6 +182,7 @@ export default function StageCanvas({
   isOutputViewRef.current = isOutputView
   const active = layers.find((l) => l.id === activeLayerId)
   isFrameActiveRef.current = active?.type === 'frame'
+  perfModeRef.current = perfMode
   onShaderCompileResultRef.current = onShaderCompileResult
 
   const getActiveLayer = useCallback(() => {
@@ -270,8 +276,8 @@ export default function StageCanvas({
       const bw = Math.ceil(maxX - minX + pad * 2)
       const bh = Math.ceil(maxY - minY + pad * 2)
       const oc = document.createElement('canvas')
-      oc.width = Math.min(bw, 4096)
-      oc.height = Math.min(bh, 4096)
+      oc.width = Math.min(bw, 2048)
+      oc.height = Math.min(bh, 2048)
       const octx = oc.getContext('2d')
       octx.translate(-minX + pad, -minY + pad)
       for (const st of layer.strokes || []) {
@@ -425,7 +431,7 @@ export default function StageCanvas({
                 continue
               }
             }
-            if (pts.length > 0) renderStroke(ctx, pts)
+            if (pts.length > 0) renderStroke(ctx, pts, layer.dabMode)
           }
         }
       } else {
@@ -438,16 +444,16 @@ export default function StageCanvas({
           if (pts.length > 0) {
             ctx.save()
             ctx.globalAlpha = Math.max(0, Math.min(1, layer.transform.opacity.lfo.min))
-            renderStroke(ctx, pts)
+            renderStroke(ctx, pts, false)
             ctx.restore()
           }
         }
 
-        if (isActive) {
+        if (isActive && !perfModeRef.current) {
           drawCrosshair(ctx)
         }
 
-        if (!dm && isActive) {
+        if (!dm && isActive && !perfModeRef.current) {
           const bbox = computeTreeBbox(node, tfComputed, pfComputed, dm)
           if (bbox) {
             drawBoundingBox(ctx, bbox)
@@ -740,10 +746,21 @@ export default function StageCanvas({
             renderer = new ShaderLayerRenderer()
             shaderRenderersRef.current.set(layer.id, renderer)
           }
-          const ok = renderer.compile(layer.code, layer.shaderRekey ?? 0)
-          if (ok) renderer.render(sharedTimeRef.current, cw, ch, undefined, undefined, layer.isfParams)
+          const changed = layer.code !== renderer.currentCode || (layer.shaderRekey ?? 0) !== renderer.currentRekey
+          if (changed) {
+            const debounce = shaderDebounceRef.current
+            if (debounce.has(layer.id)) clearTimeout(debounce.get(layer.id))
+            debounce.set(layer.id, setTimeout(() => {
+              renderer.compile(layer.code, layer.shaderRekey ?? 0)
+              debounce.delete(layer.id)
+            }, 300))
+          }
+          if (renderer.program) {
+            renderer.render(sharedTimeRef.current, cw, ch, undefined, undefined, layer.isfParams)
+          }
           if (onShaderCompileResultRef.current) {
-            onShaderCompileResultRef.current(layer.id, ok ? null : renderer.getError())
+            const err = renderer.getError()
+            onShaderCompileResultRef.current(layer.id, err || null)
           }
         }
 
@@ -775,7 +792,7 @@ export default function StageCanvas({
       const worldRight = cw / 2 / z - px
       const worldTop = -ch / 2 / z - py
       const worldBottom = ch / 2 / z - py
-      if (showGrid) {
+      if (showGrid && !perfModeRef.current) {
         const gridSize = 50
         const gx0 = Math.floor(worldLeft / gridSize) * gridSize
         const gy0 = Math.floor(worldTop / gridSize) * gridSize
@@ -834,7 +851,7 @@ export default function StageCanvas({
         renderNode(root, tfComputed, pfComputed, dm, aid, inDraw)
       }
 
-      if (!isOutputViewRef.current && cursorWorldRef.current.active && dm && !setOriginModeRef.current) {
+      if (!isOutputViewRef.current && cursorWorldRef.current.active && dm && !setOriginModeRef.current && !perfModeRef.current) {
         const aLayer = ls.find((l) => l.id === aid)
         if (aLayer && aLayer.type !== 'group' && aLayer.type !== 'kinetic' && aLayer.type !== 'frame' && aLayer.type !== 'shader') {
           let cx = cursorWorldRef.current.x
@@ -1043,9 +1060,12 @@ export default function StageCanvas({
 
     const pos = getCanvasPos(e)
     const thickness = getPenLfoVal(layer, 'thickness', sharedTimeRef.current, 0)
-    const hue = getPenLfoVal(layer, 'hue', sharedTimeRef.current, 0)
-    const sat = getPenLfoVal(layer, 'saturation', sharedTimeRef.current, 0)
-    const lit = getPenLfoVal(layer, 'lightness', sharedTimeRef.current, 0)
+    let hue = getPenLfoVal(layer, 'hue', sharedTimeRef.current, 0)
+    let sat = getPenLfoVal(layer, 'saturation', sharedTimeRef.current, 0)
+    let lit = getPenLfoVal(layer, 'lightness', sharedTimeRef.current, 0)
+    const flow = getPenLfoVal(layer, 'flow', sharedTimeRef.current, 0)
+    const j = applyJitter(hue, sat, lit, layer.jitter || 0)
+    hue = j.hue; sat = j.saturation; lit = j.lightness
 
     currentStrokeRef.current.push({
       x: pos.x, y: pos.y,
@@ -1053,6 +1073,7 @@ export default function StageCanvas({
       hue: isNaN(hue) ? 200 : hue,
       saturation: isNaN(sat) ? 70 : sat,
       lightness: isNaN(lit) ? 50 : lit,
+      opacity: isNaN(flow) ? 100 : flow,
       time: sharedTimeRef.current,
       distance: 0,
     })
@@ -1128,9 +1149,12 @@ export default function StageCanvas({
       const lineDist = Math.sqrt((lx - start.x) ** 2 + (ly - start.y) ** 2)
       distanceRef.current = lineDist
       const thickness = getPenLfoVal(layer, 'thickness', sharedTimeRef.current, lineDist)
-      const hue = getPenLfoVal(layer, 'hue', sharedTimeRef.current, lineDist)
-      const sat = getPenLfoVal(layer, 'saturation', sharedTimeRef.current, lineDist)
-      const lit = getPenLfoVal(layer, 'lightness', sharedTimeRef.current, lineDist)
+      let hue = getPenLfoVal(layer, 'hue', sharedTimeRef.current, lineDist)
+      let sat = getPenLfoVal(layer, 'saturation', sharedTimeRef.current, lineDist)
+      let lit = getPenLfoVal(layer, 'lightness', sharedTimeRef.current, lineDist)
+      const flow = getPenLfoVal(layer, 'flow', sharedTimeRef.current, lineDist)
+      const j = applyJitter(hue, sat, lit, layer.jitter || 0)
+      hue = j.hue; sat = j.saturation; lit = j.lightness
       currentStrokeRef.current = [
         start,
         {
@@ -1139,6 +1163,7 @@ export default function StageCanvas({
           hue: isNaN(hue) ? 200 : hue,
           saturation: isNaN(sat) ? 70 : sat,
           lightness: isNaN(lit) ? 50 : lit,
+          opacity: isNaN(flow) ? 100 : flow,
           time: sharedTimeRef.current,
           distance: lineDist,
         },
@@ -1156,9 +1181,12 @@ export default function StageCanvas({
     distanceRef.current += segLen
 
     const thickness = getPenLfoVal(layer, 'thickness', sharedTimeRef.current, distanceRef.current)
-    const hue = getPenLfoVal(layer, 'hue', sharedTimeRef.current, distanceRef.current)
-    const sat = getPenLfoVal(layer, 'saturation', sharedTimeRef.current, distanceRef.current)
-    const lit = getPenLfoVal(layer, 'lightness', sharedTimeRef.current, distanceRef.current)
+    let hue = getPenLfoVal(layer, 'hue', sharedTimeRef.current, distanceRef.current)
+    let sat = getPenLfoVal(layer, 'saturation', sharedTimeRef.current, distanceRef.current)
+    let lit = getPenLfoVal(layer, 'lightness', sharedTimeRef.current, distanceRef.current)
+    const flow = getPenLfoVal(layer, 'flow', sharedTimeRef.current, distanceRef.current)
+    const j = applyJitter(hue, sat, lit, layer.jitter || 0)
+    hue = j.hue; sat = j.saturation; lit = j.lightness
 
     currentStrokeRef.current.push({
       x: lx, y: ly,
@@ -1166,6 +1194,7 @@ export default function StageCanvas({
       hue: isNaN(hue) ? 200 : hue,
       saturation: isNaN(sat) ? 70 : sat,
       lightness: isNaN(lit) ? 50 : lit,
+      opacity: isNaN(flow) ? 100 : flow,
       time: sharedTimeRef.current,
       distance: distanceRef.current,
     })
@@ -1290,11 +1319,22 @@ function getPenLfoVal(layer, key, globalTime, distance) {
     if (key === 'hue') return 200
     if (key === 'saturation') return 70
     if (key === 'lightness') return 50
+    if (key === 'flow') return 100
     return 0
   }
   const lfo = config.lfo
   const phase = lfo.phaseSource === 'distance' ? distance / 100 : globalTime
   return getLfoValue(phase, lfo, `${layer.id}_pen_${key}`)
+}
+
+function applyJitter(hue, sat, lit, jitter) {
+  if (!jitter || jitter <= 0) return { hue, sat, lit }
+  const seed = Math.random() * 2 - 1
+  return {
+    hue: (hue + seed * jitter * 3) % 360,
+    saturation: Math.max(0, Math.min(100, sat + seed * jitter * 2)),
+    lightness: Math.max(0, Math.min(100, lit + seed * jitter * 1.5)),
+  }
 }
 
 const HIT_RADIUS = 8

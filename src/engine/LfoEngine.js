@@ -1,11 +1,21 @@
 import { applyEasing } from './EasingLib.js'
 
 const _randomCache = {}
+const MAX_CACHE_ENTRIES = 200
+
+function pruneCache() {
+  const keys = Object.keys(_randomCache)
+  if (keys.length > MAX_CACHE_ENTRIES) {
+    const toRemove = keys.slice(0, keys.length - MAX_CACHE_ENTRIES)
+    for (const k of toRemove) delete _randomCache[k]
+  }
+}
 
 function sampleAndHold(key, time, hold) {
   const index = Math.floor(time / hold)
   if (_randomCache[key] === undefined || _randomCache[key].index !== index) {
     _randomCache[key] = { index, value: Math.random() }
+    pruneCache()
   }
   return _randomCache[key].value
 }

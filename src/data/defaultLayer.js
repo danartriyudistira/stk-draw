@@ -30,6 +30,9 @@ export function createLayer(name, parentId = null) {
     loopDrawPosition: 0,
     loopDrawMode: 'loop',
     loopDrawHold: 0,
+    jitter: 0,
+    dabMode: false,
+    brushPreset: 'default',
     strokes: [],
     origin: { x: 0, y: 0 },
     transform: defaultTransform(),
@@ -39,6 +42,7 @@ export function createLayer(name, parentId = null) {
       hue:        { lfo: { waveform: 'triangle', easing: 'linear', speed: 0.3, min: 0, max: 360, phaseSource: 'distance', phaseOffset: 0 } },
       saturation: { lfo: { waveform: 'sine', easing: 'linear', speed: 0.3, min: 20, max: 100, phaseSource: 'distance', phaseOffset: 0 } },
       lightness:  { lfo: { waveform: 'none', easing: 'linear', speed: 0, min: 50, max: 100, phaseSource: 'time', phaseOffset: 0 } },
+      flow:       { lfo: { waveform: 'none', easing: 'linear', speed: 0, min: 100, max: 100, phaseSource: 'time', phaseOffset: 0 } },
     },
   }
 }

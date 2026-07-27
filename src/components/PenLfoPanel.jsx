@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import LfoStrip from './LfoStrip.jsx'
+import Slider from './Slider.jsx'
 import { getLfoValue } from '../engine/LfoEngine.js'
 import { globalTimeRef } from '../App.jsx'
+import { BRUSH_PRESETS } from '../data/brushPresets.js'
 
 function hslToHex(h, s, l) {
   s /= 100
@@ -111,25 +113,80 @@ export default function PenLfoPanel({ layer, onChange }) {
     onChange((l) => ({ ...l, penLFOs: { ...l.penLFOs, lightness: newConfig } }))
   }
 
+  function updateFlow(newConfig) {
+    onChange((l) => ({ ...l, penLFOs: { ...l.penLFOs, flow: newConfig } }))
+  }
+
+  function applyBrushPreset(presetId) {
+    const preset = BRUSH_PRESETS.find((p) => p.id === presetId)
+    if (!preset) return
+    onChange((l) => {
+      const keys = ['thickness', 'hue', 'saturation', 'lightness', 'flow']
+      const merged = {}
+      for (const k of keys) {
+        const cur = l.penLFOs?.[k]?.lfo || {}
+        const pre = preset.penLFOs?.[k]?.lfo || {}
+        merged[k] = {
+          lfo: {
+            ...cur,
+            min: pre.min != null ? pre.min : cur.min,
+            max: pre.max != null ? pre.max : cur.max,
+          },
+        }
+      }
+      return {
+        ...l,
+        brushPreset: presetId,
+        penLFOs: merged,
+        jitter: preset.jitter,
+        dabMode: preset.dabMode,
+      }
+    })
+  }
+
   return (
     <div className="panel-section">
       <div className="panel-section-label">Pen LFO</div>
+
+      <div className="shader-param-row" style={{ marginBottom: 6 }}>
+        <label className="shader-param-label" style={{ minWidth: 40 }}>Brush</label>
+        <select
+          className="shader-param-select"
+          style={{ flex: 1 }}
+          value={layer.brushPreset || 'default'}
+          onChange={(e) => applyBrushPreset(e.target.value)}
+        >
+          {BRUSH_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </div>
+
       <div className="transform-row">
         <span className="tr-label"></span>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, color: '#888' }}>
-          <input
-            type="checkbox"
-            checked={layer.smoothEnabled !== false}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, color: '#888', marginRight: 6 }}>
+          <input type="checkbox" checked={layer.smoothEnabled !== false}
             onChange={(e) => onChange((l) => ({ ...l, smoothEnabled: e.target.checked }))}
-            style={{ margin: 0, accentColor: '#4fc3f7' }}
-          />
+            style={{ margin: 0, accentColor: '#4fc3f7' }} />
           Smooth
         </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, color: '#888' }}>
+          <input type="checkbox" checked={layer.dabMode || false}
+            onChange={(e) => onChange((l) => ({ ...l, dabMode: e.target.checked }))}
+            style={{ margin: 0, accentColor: '#bb86fc' }} />
+          Dab
+        </label>
       </div>
+
       <LfoStrip
         label="thickness"
         config={{ ...pen.thickness, minSliderMin: 0, maxSliderMax: 200 }}
         onConfigChange={updateThickness}
+      />
+      <LfoStrip
+        label="flow"
+        config={{ ...(pen.flow || {}), minSliderMin: 0, maxSliderMax: 100 }}
+        onConfigChange={updateFlow}
       />
       <LfoStrip
         label="hue"
@@ -146,6 +203,12 @@ export default function PenLfoPanel({ layer, onChange }) {
         config={{ ...pen.lightness, minSliderMin: 0, maxSliderMax: 100 }}
         onConfigChange={updateLightness}
       />
+
+      <div className="shader-param-row" style={{ marginTop: 2 }}>
+        <label className="shader-param-label">Jitter</label>
+        <Slider value={layer.jitter || 0} min={0} max={30} step={0} defaultValue={0}
+          onChange={(v) => onChange((l) => ({ ...l, jitter: v }))} />
+      </div>
       <div style={{
         display: 'flex',
         alignItems: 'center',

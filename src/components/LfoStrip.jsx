@@ -51,7 +51,7 @@ export default function LfoStrip({ label, config, onConfigChange, disabled }) {
                 value={lfo?.min ?? 0}
                 min={sliderMin}
                 max={sliderMax}
-                step={1}
+                step={0}
                 defaultValue={0}
                 onChange={(v) => updateLfo('min', v)}
                 disabled={disabled}
@@ -90,7 +90,7 @@ export default function LfoStrip({ label, config, onConfigChange, disabled }) {
                 value={lfo?.min ?? 0}
                 min={sliderMin}
                 max={config.maxSliderMax ?? 100}
-                step={1}
+                step={0}
                 defaultValue={0}
                 onChange={(v) => updateLfo('min', Math.min(v, (lfo?.max ?? 100) - 0.01))}
                 disabled={disabled}
@@ -102,7 +102,7 @@ export default function LfoStrip({ label, config, onConfigChange, disabled }) {
                 value={lfo?.max ?? 1}
                 min={sliderMin}
                 max={config.maxSliderMax ?? 500}
-                step={1}
+                step={0}
                 defaultValue={1}
                 onChange={(v) => updateLfo('max', Math.max(v, (lfo?.min ?? 0) + 0.01))}
                 disabled={disabled}

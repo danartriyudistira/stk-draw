@@ -1,8 +1,9 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import { renderStroke } from '../engine/StrokeRenderer.js'
 import { getLfoValue } from '../engine/LfoEngine.js'
 import { globalTimeRef as sharedTimeRef } from '../App.jsx'
 import { Point, Path, Animator, renderKineticPath, renderKineticParticles, MIN_DISTANCE, LINE_THICKNESS } from '../engine/KineticEngine.js'
+import { ShaderLayerRenderer } from '../engine/ShaderLayerRenderer.js'
 
 function useLfo(lfo) {
   return lfo && lfo.waveform !== 'none'
@@ -34,6 +35,16 @@ export default function StageCanvas({
   onAddStroke,
   onUpdateTransformBase,
   onUpdateLayer,
+  bgColor = '#111',
+  showGrid = true,
+  interactive = true,
+  showFullscreenBtn = false,
+  outputRect = null,
+  onSetOutputRect = null,
+  onSetAspectRatio = null,
+  aspectRatio = 'free',
+  isOutputView = false,
+  onShaderCompileResult = null,
 }) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
@@ -69,11 +80,56 @@ export default function StageCanvas({
   const kineticAnimatorRef = useRef(new Animator())
   const kineticCurrentPathRef = useRef(null)
   const lastTimeRef = useRef(performance.now())
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const outputRectDragRef = useRef(null)
+  const outputRectRef = useRef(outputRect)
+  const aspectRatioRef = useRef(aspectRatio)
+  const isOutputViewRef = useRef(isOutputView)
+  const isFrameActiveRef = useRef(false)
+  const shaderRenderersRef = useRef(new Map())
+  const shaderMetaRef = useRef(new Map())
+  const onShaderCompileResultRef = useRef(null)
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
+
+  const toggleFullscreen = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (document.fullscreenElement) {
+      document.exitFullscreen()
+    } else {
+      el.requestFullscreen()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!showFullscreenBtn) return
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e) => {
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault()
+        toggleFullscreen()
+      }
+    }
+    el.addEventListener('keydown', handler)
+    return () => el.removeEventListener('keydown', handler)
+  }, [toggleFullscreen, showFullscreenBtn])
 
   layersRef.current = layers
   activeLayerIdRef.current = activeLayerId
   setOriginModeRef.current = setOriginMode
   drawModeRef.current = drawMode
+  outputRectRef.current = outputRect
+  aspectRatioRef.current = aspectRatio
+  isOutputViewRef.current = isOutputView
+  const active = layers.find((l) => l.id === activeLayerId)
+  isFrameActiveRef.current = active?.type === 'frame'
+  onShaderCompileResultRef.current = onShaderCompileResult
 
   const getActiveLayer = useCallback(() => {
     return layersRef.current.find((l) => l.id === activeLayerIdRef.current)
@@ -142,7 +198,7 @@ export default function StageCanvas({
       let entry = cacheMapRef.current.get(layer.id)
       if (entry && entry.strokesRef === layer.strokes) return entry
 
-      const totalPoints = layer.strokes.reduce((s, st) => s + (st.points?.length || 0), 0)
+      const totalPoints = (layer.strokes || []).reduce((s, st) => s + (st.points?.length || 0), 0)
       if (totalPoints < CACHE_THRESHOLD) {
         const e = { strokesRef: layer.strokes, canvas: null }
         cacheMapRef.current.set(layer.id, e)
@@ -150,7 +206,7 @@ export default function StageCanvas({
       }
 
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      for (const st of layer.strokes) {
+      for (const st of layer.strokes || []) {
         for (const p of st.points || []) {
           if (p.x < minX) minX = p.x
           if (p.y < minY) minY = p.y
@@ -170,7 +226,7 @@ export default function StageCanvas({
       oc.height = Math.min(bh, 4096)
       const octx = oc.getContext('2d')
       octx.translate(-minX + pad, -minY + pad)
-      for (const st of layer.strokes) {
+      for (const st of layer.strokes || []) {
         if (st.points?.length) renderStroke(octx, st.points)
       }
 
@@ -250,19 +306,21 @@ export default function StageCanvas({
         }
       }
 
-      if (applyPlacement) {
-        ctx.translate(pfc.x, pfc.y)
-        ctx.translate(ox, oy)
-        ctx.rotate((pfc.rot * Math.PI) / 180)
-        ctx.scale(Math.max(0.01, pfc.sx) * (layer.placement?.flipH ? -1 : 1), Math.max(0.01, pfc.sy) * (layer.placement?.flipV ? -1 : 1))
-        ctx.translate(-ox, -oy)
-      }
+      if (layer.type !== 'frame') {
+        if (applyPlacement) {
+          ctx.translate(pfc.x, pfc.y)
+          ctx.translate(ox, oy)
+          ctx.rotate((pfc.rot * Math.PI) / 180)
+          ctx.scale(Math.max(0.01, pfc.sx) * (layer.placement?.flipH ? -1 : 1), Math.max(0.01, pfc.sy) * (layer.placement?.flipV ? -1 : 1))
+          ctx.translate(-ox, -oy)
+        }
 
-      ctx.translate(tfc.x, tfc.y)
-      ctx.translate(ox, oy)
-      if (!isGroup) {
-        ctx.rotate((tfc.rot * Math.PI) / 180)
-        ctx.scale(Math.max(0.01, tfc.sx) * (layer.transform?.flipH ? -1 : 1), Math.max(0.01, tfc.sy) * (layer.transform?.flipV ? -1 : 1))
+        ctx.translate(tfc.x, tfc.y)
+        ctx.translate(ox, oy)
+        if (!isGroup) {
+          ctx.rotate((tfc.rot * Math.PI) / 180)
+          ctx.scale(Math.max(0.01, tfc.sx) * (layer.transform?.flipH ? -1 : 1), Math.max(0.01, tfc.sy) * (layer.transform?.flipV ? -1 : 1))
+        }
       }
 
       if (layer.type === 'kinetic') {
@@ -284,6 +342,15 @@ export default function StageCanvas({
           imageCacheRef.current.set(layer.id, entry)
         }
         ctx.drawImage(entry.img, -layer.imgW / 2, -layer.imgH / 2, layer.imgW, layer.imgH)
+      } else if (layer.type === 'frame') {
+      } else if (layer.type === 'shader') {
+        const renderer = shaderRenderersRef.current.get(layer.id)
+        if (renderer && renderer.getCanvas()) {
+          const cvs = renderer.getCanvas()
+          const cwCss = cvs.width / (window.devicePixelRatio || 1)
+          const chCss = cvs.height / (window.devicePixelRatio || 1)
+          ctx.drawImage(cvs, -cwCss / 2, -chCss / 2, cwCss, chCss)
+        }
       } else if (!isGroup) {
         const cache = ensureCache(layer)
         if (cache.canvas) {
@@ -299,24 +366,26 @@ export default function StageCanvas({
         drawGroupIndicator(ctx)
       }
 
-      if (drawingRef.current && isActive && inDraw) {
-        const pts = currentStrokeRef.current
-        if (pts.length > 0) {
-          ctx.save()
-          ctx.globalAlpha = Math.max(0, Math.min(1, layer.transform.opacity.lfo.min))
-          renderStroke(ctx, pts)
-          ctx.restore()
+      if (!isOutputViewRef.current) {
+        if (drawingRef.current && isActive && inDraw) {
+          const pts = currentStrokeRef.current
+          if (pts.length > 0) {
+            ctx.save()
+            ctx.globalAlpha = Math.max(0, Math.min(1, layer.transform.opacity.lfo.min))
+            renderStroke(ctx, pts)
+            ctx.restore()
+          }
         }
-      }
 
-      if (isActive) {
-        drawCrosshair(ctx)
-      }
+        if (isActive) {
+          drawCrosshair(ctx)
+        }
 
-      if (!dm && isActive) {
-        const bbox = computeTreeBbox(node, tfComputed, pfComputed, dm)
-        if (bbox) {
-          drawBoundingBox(ctx, bbox)
+        if (!dm && isActive) {
+          const bbox = computeTreeBbox(node, tfComputed, pfComputed, dm)
+          if (bbox) {
+            drawBoundingBox(ctx, bbox)
+          }
         }
       }
 
@@ -385,6 +454,10 @@ export default function StageCanvas({
 
     const computeTreeBbox = (node, tfComputed, pfComputed, dm) => {
       const layer = node.layer
+      if (layer.type === 'frame') {
+        const r = layer.frameRect || { x: 0, y: 0, w: 1600, h: 900 }
+        return { minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h }
+      }
       if (layer.type === 'image' && layer.imgW && layer.imgH) {
         const hw = layer.imgW / 2
         const hh = layer.imgH / 2
@@ -441,7 +514,10 @@ export default function StageCanvas({
       const plTy = (!dm && pfc) ? (pfc.y || 0) : 0
 
       let localBbox
-      if (layer.type === 'image' && layer.imgW && layer.imgH) {
+      if (layer.type === 'frame') {
+        const r = layer.frameRect || { x: 0, y: 0, w: 1600, h: 900 }
+        localBbox = { minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h }
+      } else if (layer.type === 'image' && layer.imgW && layer.imgH) {
         const hw = layer.imgW / 2
         const hh = layer.imgH / 2
         localBbox = { minX: -hw, minY: -hh, maxX: hw, maxY: hh }
@@ -563,43 +639,93 @@ export default function StageCanvas({
     }
 
     const renderFrame = () => {
-      const now = performance.now()
-      const dt = Math.min((now - lastTimeRef.current) / 1000, 0.05)
-      lastTimeRef.current = now
+      try {
+        const now = performance.now()
+        const dt = Math.min((now - lastTimeRef.current) / 1000, 0.05)
+        lastTimeRef.current = now
 
-      ctx.save()
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, cw, ch)
-      ctx.fillStyle = '#111'
-      ctx.fillRect(0, 0, cw, ch)
+        const shaderRenderers = shaderRenderersRef.current
+        const currentShaderIds = new Set(layersRef.current.filter(l => l.type === 'shader').map(l => l.id))
+        for (const [id] of shaderRenderers) {
+          if (!currentShaderIds.has(id)) {
+            shaderRenderers.get(id)?.dispose()
+            shaderRenderers.delete(id)
+            shaderMetaRef.current.delete(id)
+          }
+        }
 
-      const z = zoomRef.current
+        for (const layer of layersRef.current) {
+          if (layer.type !== 'shader' || !layer.visible) continue
+
+          const meta = shaderMetaRef.current
+          const prev = meta.get(layer.id)
+          const currentMeta = { code: layer.code, rekey: layer.shaderRekey ?? 0 }
+          if (!prev || prev.code !== currentMeta.code || prev.rekey !== currentMeta.rekey) {
+            const old = shaderRenderersRef.current.get(layer.id)
+            if (old) {
+              old.dispose()
+              shaderRenderersRef.current.delete(layer.id)
+            }
+            meta.set(layer.id, currentMeta)
+          }
+
+          let renderer = shaderRenderersRef.current.get(layer.id)
+          if (!renderer) {
+            renderer = new ShaderLayerRenderer()
+            shaderRenderersRef.current.set(layer.id, renderer)
+          }
+          const ok = renderer.compile(layer.code, layer.shaderRekey ?? 0)
+          if (ok) renderer.render(sharedTimeRef.current, cw, ch, undefined, undefined, layer.isfParams)
+          if (onShaderCompileResultRef.current) {
+            onShaderCompileResultRef.current(layer.id, ok ? null : renderer.getError())
+          }
+        }
+
+        ctx.save()
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, cw, ch)
+        ctx.fillStyle = bgColor
+        ctx.fillRect(0, 0, cw, ch)
+
+        const z = zoomRef.current
       const px = panXRef.current
       const py = panYRef.current
 
-      ctx.translate(cw / 2, ch / 2)
-      ctx.scale(z, z)
-      ctx.translate(px, py)
+      if (isOutputViewRef.current) {
+        const rect = outputRectRef.current
+        if (rect && rect.w > 0 && rect.h > 0) {
+          const s = Math.min(cw / rect.w, ch / rect.h)
+          ctx.translate(cw / 2, ch / 2)
+          ctx.scale(s, s)
+          ctx.translate(-rect.x - rect.w / 2, -rect.y - rect.h / 2)
+        }
+      } else {
+        ctx.translate(cw / 2, ch / 2)
+        ctx.scale(z, z)
+        ctx.translate(px, py)
+      }
 
       const worldLeft = -cw / 2 / z - px
       const worldRight = cw / 2 / z - px
       const worldTop = -ch / 2 / z - py
       const worldBottom = ch / 2 / z - py
-      const gridSize = 50
-      const gx0 = Math.floor(worldLeft / gridSize) * gridSize
-      const gy0 = Math.floor(worldTop / gridSize) * gridSize
-      ctx.strokeStyle = '#222'
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      for (let gx = gx0; gx <= worldRight; gx += gridSize) {
-        ctx.moveTo(gx, worldTop)
-        ctx.lineTo(gx, worldBottom)
+      if (showGrid) {
+        const gridSize = 50
+        const gx0 = Math.floor(worldLeft / gridSize) * gridSize
+        const gy0 = Math.floor(worldTop / gridSize) * gridSize
+        ctx.strokeStyle = '#222'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        for (let gx = gx0; gx <= worldRight; gx += gridSize) {
+          ctx.moveTo(gx, worldTop)
+          ctx.lineTo(gx, worldBottom)
+        }
+        for (let gy = gy0; gy <= worldBottom; gy += gridSize) {
+          ctx.moveTo(worldLeft, gy)
+          ctx.lineTo(worldRight, gy)
+        }
+        ctx.stroke()
       }
-      for (let gy = gy0; gy <= worldBottom; gy += gridSize) {
-        ctx.moveTo(worldLeft, gy)
-        ctx.lineTo(worldRight, gy)
-      }
-      ctx.stroke()
 
       const time = sharedTimeRef.current
       const ls = layersRef.current
@@ -636,15 +762,15 @@ export default function StageCanvas({
       activeLayerPfRef.current = pfComputed.get(aid) ?? null
 
       const { roots } = buildTree(ls)
-      const inDraw = dm && !!ls.find((l) => l.id === aid && !l.locked && l.type !== 'group' && l.type !== 'kinetic')
+      const inDraw = dm && !!ls.find((l) => l.id === aid && !l.locked && l.type !== 'group' && l.type !== 'kinetic' && l.type !== 'frame' && l.type !== 'shader')
 
       for (const root of roots) {
         renderNode(root, tfComputed, pfComputed, dm, aid, inDraw)
       }
 
-      if (cursorWorldRef.current.active && dm && !setOriginModeRef.current) {
+      if (!isOutputViewRef.current && cursorWorldRef.current.active && dm && !setOriginModeRef.current) {
         const aLayer = ls.find((l) => l.id === aid)
-        if (aLayer && aLayer.type !== 'group' && aLayer.type !== 'kinetic') {
+        if (aLayer && aLayer.type !== 'group' && aLayer.type !== 'kinetic' && aLayer.type !== 'frame' && aLayer.type !== 'shader') {
           let cx = cursorWorldRef.current.x
           let cy = cursorWorldRef.current.y
           const fwdMat = chainFwdMatRef.current
@@ -676,7 +802,50 @@ export default function StageCanvas({
         }
       }
 
+      if (!isOutputViewRef.current && outputRectRef.current) {
+        const rect = outputRectRef.current
+        const active = isFrameActiveRef.current
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(worldLeft - 9999, worldTop - 9999, 99999, 99999)
+        ctx.rect(rect.x, rect.y, rect.w, rect.h)
+        ctx.fillStyle = active ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.25)'
+        ctx.fill('evenodd')
+        ctx.restore()
+
+        ctx.save()
+        ctx.strokeStyle = active ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.2)'
+        ctx.lineWidth = active ? 1.5 : 1
+        ctx.setLineDash([active ? 6 : 4, active ? 4 : 4])
+        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+        ctx.setLineDash([])
+        ctx.restore()
+
+        if (active) {
+          ctx.save()
+          const hs = 8
+          const handles = [
+            { x: rect.x, y: rect.y },
+            { x: rect.x + rect.w / 2, y: rect.y },
+            { x: rect.x + rect.w, y: rect.y },
+            { x: rect.x + rect.w, y: rect.y + rect.h / 2 },
+            { x: rect.x + rect.w, y: rect.y + rect.h },
+            { x: rect.x + rect.w / 2, y: rect.y + rect.h },
+            { x: rect.x, y: rect.y + rect.h },
+            { x: rect.x, y: rect.y + rect.h / 2 },
+          ]
+          ctx.fillStyle = '#fff'
+          for (const h of handles) {
+            ctx.fillRect(h.x - hs / 2, h.y - hs / 2, hs, hs)
+          }
+          ctx.restore()
+        }
+      }
+
       ctx.restore()
+      } catch (e) {
+        console.error('[StageCanvas] render frame error:', e)
+      }
       raf = requestAnimationFrame(renderFrame)
     }
 
@@ -689,6 +858,7 @@ export default function StageCanvas({
   }, [])
 
   const handlePointerDown = useCallback((e) => {
+    if (!interactive) return
     if (e.button === 1) {
       e.preventDefault()
       panningRef.current = true
@@ -739,20 +909,39 @@ export default function StageCanvas({
       return
     }
 
+    const outRect = outputRectRef.current
+    const activeLayer = getActiveLayer()
+    if (drawModeRef.current && !isOutputViewRef.current && activeLayer?.type === 'frame' && outRect && onSetOutputRect) {
+      const pos = getCanvasPos(e)
+      const hit = hitTestOutputRect(pos, outRect)
+      if (hit) {
+        outputRectDragRef.current = { ...hit, startRect: { ...outRect }, startPos: { ...pos } }
+        const canvas = canvasRef.current
+        if (canvas) canvas.style.cursor = 'grabbing'
+        return
+      }
+      return
+    }
+
     if (!drawModeRef.current) {
       const layer = getActiveLayer()
       if (!layer) return
       transformDragRef.current = true
       const pos = getCanvasPos(e, true)
       transformPointerRef.current = { x: pos.x, y: pos.y }
-      const pl = layer.placement
-      if (pl) {
-        transformBaseRef.current = {
-          x: pl.x.lfo.min,
-          y: pl.y.lfo.min,
-          rot: pl.rotation.lfo.min,
-          sx: pl.scaleX.lfo.min,
-          sy: pl.scaleY.lfo.min,
+      if (layer.type === 'frame') {
+        const r = layer.frameRect || { x: 0, y: 0, w: 1600, h: 900 }
+        transformBaseRef.current = { x: r.x, y: r.y, rot: 0, sx: 1, sy: 1 }
+      } else {
+        const pl = layer.placement
+        if (pl) {
+          transformBaseRef.current = {
+            x: pl.x.lfo.min,
+            y: pl.y.lfo.min,
+            rot: pl.rotation.lfo.min,
+            sx: pl.scaleX.lfo.min,
+            sy: pl.scaleY.lfo.min,
+          }
         }
       }
       const canvas = canvasRef.current
@@ -761,7 +950,7 @@ export default function StageCanvas({
     }
 
     const layer = getActiveLayer()
-    if (!layer || layer.locked || layer.type === 'group') return
+    if (!layer || layer.locked || layer.type === 'group' || layer.type === 'shader') return
 
     if (layer.type === 'kinetic') {
       const pos = getCanvasPos(e)
@@ -805,7 +994,15 @@ export default function StageCanvas({
 
 
   const handlePointerMove = useCallback((e) => {
+    if (!interactive) return
     if (panningRef.current) return
+
+    const drag = outputRectDragRef.current
+    if (drag) {
+      const pos = getCanvasPos(e)
+      updateOutputRectDrag(drag, pos, aspectRatioRef.current, onSetOutputRect)
+      return
+    }
 
     const pos = getCanvasPos(e)
 
@@ -821,6 +1018,10 @@ export default function StageCanvas({
       const dy = dragPos.y - transformPointerRef.current.y
       const tb = transformBaseRef.current
       onUpdateTransformBase((layer) => {
+        if (layer.type === 'frame') {
+          const r = layer.frameRect || { x: 0, y: 0, w: 1600, h: 900 }
+          return { ...layer, frameRect: { ...r, x: tb.x + dx, y: tb.y + dy } }
+        }
         const pl = layer.placement
         if (!pl) return layer
         return {
@@ -904,7 +1105,14 @@ export default function StageCanvas({
   }, [getCanvasPos, getActiveLayer, onUpdateTransformBase])
 
   const handlePointerUp = useCallback(() => {
+    if (!interactive) return
     if (panningRef.current) return
+
+    if (outputRectDragRef.current) {
+      outputRectDragRef.current = null
+      resetCursor()
+      return
+    }
 
     if (transformDragRef.current) {
       transformDragRef.current = false
@@ -941,6 +1149,7 @@ export default function StageCanvas({
   }, [onAddStroke, onUpdateLayer])
 
   const handleWheel = useCallback((e) => {
+    if (!interactive) return
     e.preventDefault()
     const canvas = canvasRef.current
     if (!canvas) return
@@ -969,14 +1178,29 @@ export default function StageCanvas({
   }, [drawMode, setOriginMode, resetCursor])
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
+    <div ref={containerRef} tabIndex={0} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, outline: 'none' }}>
+      {showFullscreenBtn && (
+        <div style={{ position: 'absolute', top: 4, right: 4, zIndex: 10, display: 'flex', gap: 4 }}>
+          <button
+            onClick={toggleFullscreen}
+            title="Fullscreen (F)"
+            style={{
+              background: 'rgba(0,0,0,0.5)', border: '1px solid #444',
+              color: '#ccc', borderRadius: 3, padding: '2px 6px',
+              fontSize: 11, cursor: 'pointer',
+            }}
+          >
+            {isFullscreen ? '⛶ Exit FS' : '⛶ Fullscreen'}
+          </button>
+        </div>
+      )}
       <canvas
         ref={canvasRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={() => { cursorWorldRef.current.active = false }}
-        onWheel={handleWheel}
+        onPointerDown={interactive ? handlePointerDown : undefined}
+        onPointerMove={interactive ? handlePointerMove : undefined}
+        onPointerUp={interactive ? handlePointerUp : undefined}
+        onPointerLeave={interactive ? () => { cursorWorldRef.current.active = false } : undefined}
+        onWheel={interactive ? handleWheel : undefined}
         onContextMenu={(e) => e.preventDefault()}
         style={{
           display: 'block',
@@ -1001,4 +1225,65 @@ function getPenLfoVal(layer, key, globalTime, distance) {
   const lfo = config.lfo
   const phase = lfo.phaseSource === 'distance' ? distance / 100 : globalTime
   return getLfoValue(phase, lfo, `${layer.id}_pen_${key}`)
+}
+
+const HIT_RADIUS = 8
+const EDGE_HIT = 6
+
+function hitTestOutputRect(pos, rect) {
+  const handles = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.w / 2, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y + rect.h / 2 },
+    { x: rect.x + rect.w, y: rect.y + rect.h },
+    { x: rect.x + rect.w / 2, y: rect.y + rect.h },
+    { x: rect.x, y: rect.y + rect.h },
+    { x: rect.x, y: rect.y + rect.h / 2 },
+  ]
+  for (let i = 0; i < handles.length; i++) {
+    if (Math.abs(pos.x - handles[i].x) < HIT_RADIUS && Math.abs(pos.y - handles[i].y) < HIT_RADIUS) {
+      return { mode: 'resize', handleIndex: i }
+    }
+  }
+  const onLeft = pos.x >= rect.x - EDGE_HIT && pos.x <= rect.x + EDGE_HIT && pos.y >= rect.y && pos.y <= rect.y + rect.h
+  const onRight = pos.x >= rect.x + rect.w - EDGE_HIT && pos.x <= rect.x + rect.w + EDGE_HIT && pos.y >= rect.y && pos.y <= rect.y + rect.h
+  const onTop = pos.y >= rect.y - EDGE_HIT && pos.y <= rect.y + EDGE_HIT && pos.x >= rect.x && pos.x <= rect.x + rect.w
+  const onBottom = pos.y >= rect.y + rect.h - EDGE_HIT && pos.y <= rect.y + rect.h + EDGE_HIT && pos.x >= rect.x && pos.x <= rect.x + rect.w
+  if (onLeft || onRight || onTop || onBottom) return { mode: 'move' }
+  return null
+}
+
+const ASPECT_VALUES = { '16:9': 16 / 9, '4:3': 4 / 3, '3:2': 3 / 2, '1:1': 1 }
+
+function updateOutputRectDrag(drag, pos, aspectRatio, onSet) {
+  if (drag.mode === 'move') {
+    const r = drag.startRect
+    onSet({ x: r.x + pos.x - drag.startPos.x, y: r.y + pos.y - drag.startPos.y, w: r.w, h: r.h })
+    return
+  }
+  const r = drag.startRect
+  const fixed = [
+    { x: r.x + r.w, y: r.y + r.h },
+    { x: r.x + r.w, y: r.y + r.h },
+    { x: r.x, y: r.y + r.h },
+    { x: r.x, y: r.y + r.h },
+    { x: r.x, y: r.y },
+    { x: r.x, y: r.y },
+    { x: r.x + r.w, y: r.y },
+    { x: r.x + r.w, y: r.y },
+  ]
+  const f = fixed[drag.handleIndex]
+  let w = Math.abs(pos.x - f.x)
+  let h = Math.abs(pos.y - f.y)
+  w = Math.max(20, w)
+  h = Math.max(20, h)
+  const ratio = ASPECT_VALUES[aspectRatio]
+  if (ratio) {
+    if (w / h > ratio) h = w / ratio
+    else w = h * ratio
+  }
+  const x = pos.x > f.x ? f.x : f.x - w
+  const y = pos.y > f.y ? f.y : f.y - h
+  onSet({ x, y, w, h })
 }

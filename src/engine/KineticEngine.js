@@ -105,7 +105,19 @@ export class Path {
     this.particles.push(particle)
   }
   reset() {
-    for (const point of this.points) point.reset()
+    for (const point of this.points) {
+      if (point.reset) point.reset()
+      else {
+        point.active = false
+        point.drag = 0.0
+        point.age = 0
+        point.vx = 0
+        point.vy = 0
+        point.t = 1
+        point.x = point.ox
+        point.y = point.oy
+      }
+    }
     this.particles.length = 0
     this.drawProgress = 0
     this.age = 0
@@ -137,7 +149,22 @@ export class Animator {
             point.active = false
           }
         } else {
-          path.reset()
+          if (path.reset) path.reset()
+          else {
+            for (const point of path.points || []) {
+              point.active = false
+              point.drag = 0.0
+              point.age = 0
+              point.vx = 0
+              point.vy = 0
+              point.t = 1
+              point.x = point.ox
+              point.y = point.oy
+            }
+            path.particles = []
+            path.drawProgress = 0
+            path.age = 0
+          }
         }
       }
       path.age += dt

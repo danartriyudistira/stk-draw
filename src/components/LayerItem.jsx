@@ -76,6 +76,8 @@ export default function LayerItem({
           {isGroup && <span className="layer-badge group-badge">G</span>}
           {layer.type === 'image' && <span className="layer-badge img-badge">IMG</span>}
           {layer.type === 'kinetic' && <span className="layer-badge kinetic-badge">K</span>}
+          {layer.type === 'frame' && <span className="layer-badge frame-badge">▭</span>}
+          {layer.type === 'shader' && <span className="layer-badge shader-badge">S</span>}
         </span>
       )}
 

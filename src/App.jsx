@@ -4,12 +4,18 @@ import StageCanvas from './components/StageCanvas.jsx'
 import LayerPanel from './components/LayerPanel.jsx'
 import PenLfoPanel from './components/PenLfoPanel.jsx'
 import KineticPanel from './components/KineticPanel.jsx'
+import FramePanel from './components/FramePanel.jsx'
 import TransformLfoPanel from './components/TransformLfoPanel.jsx'
-import { createLayer, createGroup, createKineticLayer, deepCloneSubtree, collectDescendantIds } from './data/defaultLayer.js'
+import ShaderParamPanel from './components/ShaderParamPanel.jsx'
+import { createLayer, createGroup, createKineticLayer, createFrameLayer, createShaderLayer, deepCloneSubtree, collectDescendantIds } from './data/defaultLayer.js'
+import ShaderCodeEditor from './components/ShaderCodeEditor.jsx'
 
 const INITIAL_LAYER = createLayer('Layer 1')
+const INITIAL_FRAME = createFrameLayer('Output')
 
 export const globalTimeRef = { current: 0 }
+
+const isStandalone = new URLSearchParams(window.location.search).has('standalone')
 
 const ClockDisplay = memo(function ClockDisplay({ className }) {
   const [t, setT] = useState(0)
@@ -25,16 +31,117 @@ const ClockDisplay = memo(function ClockDisplay({ className }) {
   return <span className={className}>{t.toFixed(1)}s</span>
 })
 
+function StandaloneView() {
+  const [state, setState] = useState(null)
+  const [waiting, setWaiting] = useState(false)
+
+  useEffect(() => {
+    const channel = new BroadcastChannel('stk-draw-sync')
+    channel.onmessage = (e) => {
+      if (e.data.type === 'state') {
+        setState(e.data)
+        setWaiting(false)
+      }
+    }
+    const timer = setTimeout(() => setWaiting(true), 2000)
+    return () => { channel.close(); clearTimeout(timer) }
+  }, [])
+
+  if (!state) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ color: waiting ? '#555' : '#333', fontSize: 14, fontFamily: 'monospace' }}>
+          {waiting ? 'Waiting for connection...' : 'Connecting...'}
+        </span>
+      </div>
+    )
+  }
+
+  const frame = (state.layers || []).find((l) => l.type === 'frame')
+  const outRect = frame?.frameRect || state.outputRect || { x: -800, y: -450, w: 1600, h: 900 }
+  const outRatio = frame?.aspectRatio || state.aspectRatio || '16:9'
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
+      <StageCanvas
+        layers={state.layers}
+        activeLayerId={state.activeLayerId}
+        setOriginMode={false}
+        drawMode={state.drawMode}
+        onSetOrigin={() => {}}
+        onAddStroke={() => {}}
+        onUpdateTransformBase={() => {}}
+        onUpdateLayer={() => {}}
+        bgColor={state.bgColor}
+        outputRect={outRect}
+        aspectRatio={outRatio}
+        isOutputView={true}
+        showGrid={false}
+        interactive={false}
+        showFullscreenBtn={true}
+      />
+    </div>
+  )
+}
+
 export default function App() {
-  const [layers, setLayers] = useState([INITIAL_LAYER])
+  if (isStandalone) return <StandaloneView />
+
+  // --- normal app below ---
+  const [layers, setLayers] = useState([INITIAL_FRAME, INITIAL_LAYER])
   const [activeLayerId, setActiveLayerId] = useState(INITIAL_LAYER.id)
   const [isPlaying, setIsPlaying] = useState(true)
   const [setOriginMode, setSetOriginMode] = useState(false)
   const [drawMode, setDrawMode] = useState(true)
   const [statusText, setStatusText] = useState('Ready')
+  const [bgColor, setBgColor] = useState('#111')
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorHeight, setEditorHeight] = useState(240)
+  const [shaderCompileErrors, setShaderCompileErrors] = useState({})
   const rafIdRef = useRef(null)
+  const popupRef = useRef(null)
 
   const activeLayer = layers.find((l) => l.id === activeLayerId) || layers[0]
+  const frameLayer = layers.find((l) => l.type === 'frame') || INITIAL_FRAME
+  const outputRect = frameLayer.frameRect
+  const aspectRatio = frameLayer.aspectRatio
+
+  const handleUpdateFrame = useCallback((fn) => {
+    setLayers((prev) => {
+      const frame = prev.find((l) => l.type === 'frame')
+      if (!frame) return prev
+      return prev.map((l) => l.id === frame.id ? { ...l, ...fn(l) } : l)
+    })
+  }, [])
+
+  const broadcastRef = useRef({ layers, activeLayerId, drawMode, bgColor, outputRect, aspectRatio })
+  broadcastRef.current = { layers, activeLayerId, drawMode, bgColor, outputRect, aspectRatio }
+
+  useEffect(() => {
+    const channel = new BroadcastChannel('stk-draw-sync')
+    let raf
+    const tick = () => {
+      const s = broadcastRef.current
+      channel.postMessage({ type: 'state', ...JSON.parse(JSON.stringify(s)) })
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => { cancelAnimationFrame(raf); channel.close() }
+  }, [])
+
+  const handlePopout = useCallback(() => {
+    if (popupRef.current && !popupRef.current.closed) {
+      popupRef.current.focus()
+      return
+    }
+    const w = Math.round(screen.width * 0.5)
+    const h = Math.round(screen.height * 0.5)
+    const left = Math.round((screen.width - w) / 2)
+    const top = Math.round((screen.height - h) / 2)
+    const url = window.location.href.split('?')[0].split('#')[0] + '?standalone=1'
+    popupRef.current = window.open(url, 'stk-draw-popup',
+      `popup=1,width=${w},height=${h},left=${left},top=${top},menubar=0,toolbar=0,location=0,status=0`)
+  }, [])
 
   const updateActiveLayer = useCallback((fn) => {
     setLayers((prev) => {
@@ -68,6 +175,8 @@ export default function App() {
   const handleDeleteLayer = useCallback(() => {
     setLayers((prev) => {
       if (prev.length <= 1) return prev
+      const target = prev.find((l) => l.id === activeLayerId)
+      if (target?.type === 'frame') return prev
       const idsToRemove = new Set(collectDescendantIds(prev, activeLayerId))
       const deletedIdx = prev.findIndex((l) => l.id === activeLayerId)
       const next = prev.filter((l) => !idsToRemove.has(l.id))
@@ -198,6 +307,44 @@ export default function App() {
     })
   }, [])
 
+  const handleAddShaderLayer = useCallback(() => {
+    setLayers((prev) => {
+      const layer = createShaderLayer(`Shader ${prev.length + 1}`)
+      setActiveLayerId(layer.id)
+      return [...prev, layer]
+    })
+  }, [])
+
+  const handleEditorToggle = useCallback(() => {
+    setEditorOpen((prev) => !prev)
+  }, [])
+
+  useEffect(() => {
+    const layer = layers.find((l) => l.id === activeLayerId)
+    if (layer?.type === 'shader') {
+      setEditorOpen(true)
+    } else {
+      setEditorOpen(false)
+    }
+  }, [activeLayerId])
+
+  const handleShaderCodeChange = useCallback((code) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.id === activeLayerId ? { ...l, code } : l))
+    )
+  }, [activeLayerId])
+
+  const handleShaderCompileResult = useCallback((layerId, error) => {
+    setShaderCompileErrors((prev) => {
+      if (prev[layerId] === error) return prev
+      return { ...prev, [layerId]: error }
+    })
+  }, [])
+
+  const handleShaderRefresh = useCallback(() => {
+    updateActiveLayer((l) => ({ ...l, shaderRekey: (l.shaderRekey || 0) + 1 }))
+  }, [updateActiveLayer])
+
   const handleAddGroup = useCallback(() => {
     setLayers((prev) => {
       const group = createGroup(`Group ${prev.length + 1}`)
@@ -290,6 +437,8 @@ export default function App() {
           {drawMode ? '✎ Draw' : '↕ Transform'}
         </button>
         <button onClick={handleExportPNG}>↓ PNG</button>
+        <button onClick={handlePopout} title="Pop out canvas to separate window">⛶ Popout</button>
+
         <ClockDisplay className="toolbar-clock" />
       </div>
 
@@ -311,6 +460,7 @@ export default function App() {
           onToggleExpand={handleToggleExpand}
           onImportImage={handleImportImage}
           onAddKinetic={handleAddKineticLayer}
+          onAddShader={handleAddShaderLayer}
           onLinkParent={handleLinkParent}
         />
 
@@ -324,11 +474,64 @@ export default function App() {
             onAddStroke={handleAddStroke}
             onUpdateTransformBase={updateActiveLayer}
             onUpdateLayer={updateActiveLayer}
+            bgColor={bgColor}
+            outputRect={outputRect}
+            onSetOutputRect={(rect) => handleUpdateFrame((l) => ({ frameRect: rect }))}
+            aspectRatio={aspectRatio}
+            onSetAspectRatio={(ar) => handleUpdateFrame((l) => ({ aspectRatio: ar }))}
+            onShaderCompileResult={handleShaderCompileResult}
+          />
+          <ShaderCodeEditor
+            key={activeLayerId}
+            code={activeLayer?.type === 'shader' ? activeLayer.code : ''}
+            onChange={handleShaderCodeChange}
+            onRefresh={handleShaderRefresh}
+            layerName={activeLayer?.type === 'shader' ? activeLayer.name : ''}
+            open={editorOpen && activeLayer?.type === 'shader'}
+            onToggle={handleEditorToggle}
+            error={activeLayer?.type === 'shader' ? shaderCompileErrors[activeLayer.id] : null}
+            height={editorHeight}
+            onResize={setEditorHeight}
           />
         </div>
 
         <div className="right-panel">
-          {drawMode ? (
+          {activeLayer?.type === 'shader' ? (
+            <>
+              <ShaderParamPanel
+                layer={activeLayer}
+                onChange={updateActiveLayer}
+                error={activeLayer?.type === 'shader' ? shaderCompileErrors[activeLayer.id] : null}
+              />
+              <TransformLfoPanel
+                layer={activeLayer}
+                onChange={updateActiveLayer}
+                setOriginMode={setOriginMode}
+                onSetOriginMode={handleSetOriginMode}
+                onCancelSetOrigin={handleCancelSetOrigin}
+                target="transform"
+                layers={layers}
+                onLinkParent={handleLinkParent}
+              />
+            </>
+          ) : activeLayer?.type === 'frame' ? (
+            <>
+              <FramePanel
+                layer={activeLayer}
+                onChange={handleUpdateFrame}
+              />
+              <TransformLfoPanel
+                layer={activeLayer}
+                onChange={updateActiveLayer}
+                setOriginMode={setOriginMode}
+                onSetOriginMode={handleSetOriginMode}
+                onCancelSetOrigin={handleCancelSetOrigin}
+                target="transform"
+                layers={layers}
+                onLinkParent={handleLinkParent}
+              />
+            </>
+          ) : drawMode ? (
             <>
               {activeLayer?.type !== 'kinetic' && (
                 <PenLfoPanel
@@ -372,6 +575,15 @@ export default function App() {
         <span>{statusText}</span>
         <span>Layer: {activeLayer?.name || '—'}</span>
         <span>Strokes: {activeLayer?.strokes?.length ?? activeLayer?.paths?.length ?? 0}</span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#888', marginLeft: 8 }}>
+          BG
+          <input
+            type="color"
+            value={bgColor}
+            onChange={(e) => setBgColor(e.target.value)}
+            style={{ width: 20, height: 20, padding: 0, border: '1px solid #444', borderRadius: 2, background: 'none', cursor: 'pointer' }}
+          />
+        </label>
         <ClockDisplay className="status-phase" />
       </div>
     </div>

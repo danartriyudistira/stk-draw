@@ -62,6 +62,61 @@ export function createKineticLayer(name, parentId = null) {
   }
 }
 
+export function createFrameLayer(name, parentId = null) {
+  return {
+    id: crypto.randomUUID?.() || `frame-${Date.now()}-${Math.random()}`,
+    name,
+    parentId,
+    linkParentId: null,
+    visible: true,
+    locked: false,
+    type: 'frame',
+    frameRect: { x: -800, y: -450, w: 1600, h: 900 },
+    aspectRatio: '16:9',
+    origin: { x: 0, y: 0 },
+    transform: defaultTransform(),
+    placement: defaultTransform(),
+    penLFOs: null,
+  }
+}
+
+export const DEFAULT_SHADER_CODE = `/*{
+  "DESCRIPTION": "Hue rotating gradient",
+  "CREDIT": "STK",
+  "ISFVSN": "2.0",
+  "INPUTS": [
+    {"NAME": "speed", "TYPE": "float", "MIN": 0.0, "MAX": 2.0, "DEFAULT": 1.0},
+    {"NAME": "hueShift", "TYPE": "float", "MIN": 0.0, "MAX": 6.2832, "DEFAULT": 0.0}
+  ]
+}*/
+
+precision highp float;
+
+void main() {
+    vec2 uv = isf_FragNormCoord;
+    vec3 col = 0.5 + 0.5 * cos(TIME * speed + uv.xyx + vec3(0.0, 2.0, 4.0) + hueShift);
+    gl_FragColor = vec4(col, 1.0);
+}`
+
+export function createShaderLayer(name, parentId = null) {
+  return {
+    id: crypto.randomUUID?.() || `shader-${Date.now()}-${Math.random()}`,
+    name,
+    parentId,
+    linkParentId: null,
+    visible: true,
+    locked: false,
+    type: 'shader',
+    code: DEFAULT_SHADER_CODE,
+    shaderRekey: 0,
+    isfParams: {},
+    origin: { x: 0, y: 0 },
+    transform: defaultTransform(),
+    placement: defaultTransform(),
+    penLFOs: null,
+  }
+}
+
 export function createGroup(name, parentId = null) {
   return {
     id: crypto.randomUUID?.() || `group-${Date.now()}-${Math.random()}`,

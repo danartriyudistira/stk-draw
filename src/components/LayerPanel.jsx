@@ -52,6 +52,7 @@ export default function LayerPanel({
   onToggleExpand,
   onImportImage,
   onAddKinetic,
+  onAddShader,
   onLinkParent,
 }) {
   const dragFromIdxRef = useRef(null)
@@ -123,6 +124,7 @@ export default function LayerPanel({
           <button onClick={onAdd} title="New Layer">+</button>
           <button onClick={onAddGroup} title="New Group" style={{ color: '#bb86fc' }}>G+</button>
           <button onClick={onAddKinetic} title="New Kinetic Layer" style={{ color: '#f9a825' }}>K+</button>
+          <button onClick={() => onAddShader?.()} title="New Shader Layer" style={{ color: '#81c784' }}>S+</button>
           <button className="img-btn" onClick={() => fileRef.current?.click()} title="Import Image">Img</button>
         </div>
         <input

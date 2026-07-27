@@ -1,16 +1,19 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import Editor from '@monaco-editor/react'
+import ShaderLibrary from './ShaderLibrary.jsx'
 
 export default function ShaderCodeEditor({
   code,
   onChange,
   onRefresh,
+  onApplyShader,
   layerName,
   open,
   onToggle,
   error,
   height,
   onResize,
+  layers,
 }) {
   const containerRef = useRef(null)
   const editorRef = useRef(null)
@@ -94,25 +97,30 @@ export default function ShaderCodeEditor({
               <button className="shader-editor-collapse-btn" onClick={onToggle} title="Collapse">▼</button>
             </div>
           </div>
-          <div className="shader-editor-container">
-            <Editor
-              height="100%"
-              language="glsl"
-              theme="vs-dark"
-              defaultValue={code}
-              onChange={handleEditorChange}
-              onMount={handleEditorMount}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 13,
-                lineNumbers: 'on',
-                scrollBeyondLastLine: false,
-                wordWrap: 'on',
-                tabSize: 2,
-                padding: { top: 4 },
-                automaticLayout: true,
-              }}
-            />
+          <div className="shader-editor-body">
+            <div className="shader-editor-left">
+              <Editor
+                height="100%"
+                language="glsl"
+                theme="vs-dark"
+                defaultValue={code}
+                onChange={handleEditorChange}
+                onMount={handleEditorMount}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  wordWrap: 'on',
+                  tabSize: 2,
+                  padding: { top: 4 },
+                  automaticLayout: true,
+                }}
+              />
+            </div>
+            <div className="shader-editor-right">
+              <ShaderLibrary onApply={onApplyShader} layers={layers} />
+            </div>
           </div>
         </>
       )}

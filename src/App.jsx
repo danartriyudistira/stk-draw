@@ -110,6 +110,10 @@ export default function App() {
   const outputRect = frameLayer.frameRect
   const aspectRatio = frameLayer.aspectRatio
 
+  const loopDrawLayer = (activeLayer && activeLayer.type !== 'shader' && activeLayer.type !== 'kinetic' && activeLayer.type !== 'frame' && activeLayer.strokes?.length > 0)
+    ? activeLayer
+    : layers.find((l) => l.loopDrawEnabled && l.strokes?.length > 0) || null
+
   layersRef.current = layers
 
   const handleUpdateFrame = useCallback((fn) => {
@@ -383,6 +387,19 @@ export default function App() {
     updateActiveLayer((l) => ({ ...l, shaderRekey: (l.shaderRekey || 0) + 1 }))
   }, [updateActiveLayer])
 
+  const handleApplyShader = useCallback((code, isfParams) => {
+    updateActiveLayer((l) => ({
+      ...l,
+      code,
+      isfParams: { ...(l.isfParams || {}), ...(isfParams || {}) },
+      shaderRekey: (l.shaderRekey || 0) + 1,
+    }))
+  }, [updateActiveLayer])
+
+  const handleLoopDrawChange = useCallback((fn) => {
+    setLayers((prev) => prev.map((l) => (l.id === loopDrawLayer?.id ? fn(l) : l)))
+  }, [loopDrawLayer?.id])
+
   const handleAddGroup = useCallback(() => {
     setLayers((prev) => {
       const group = createGroup(`Group ${prev.length + 1}`)
@@ -547,20 +564,22 @@ export default function App() {
             code={activeLayer?.type === 'shader' ? activeLayer.code : ''}
             onChange={handleShaderCodeChange}
             onRefresh={handleShaderRefresh}
+            onApplyShader={handleApplyShader}
             layerName={activeLayer?.type === 'shader' ? activeLayer.name : ''}
             open={editorOpen && activeLayer?.type === 'shader'}
             onToggle={handleEditorToggle}
             error={activeLayer?.type === 'shader' ? shaderCompileErrors[activeLayer.id] : null}
             height={editorHeight}
             onResize={setEditorHeight}
+            layers={layers}
           />
         </div>
 
         <div className="right-panel">
-          {activeLayer?.type !== 'shader' && activeLayer?.type !== 'kinetic' && activeLayer?.type !== 'frame' && activeLayer?.strokes?.length > 0 && (
+          {loopDrawLayer && (
             <DrawLoopPanel
-              layer={activeLayer}
-              onChange={updateActiveLayer}
+              layer={loopDrawLayer}
+              onChange={handleLoopDrawChange}
             />
           )}
           {activeLayer?.type === 'shader' ? (

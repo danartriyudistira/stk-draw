@@ -47,7 +47,9 @@ function miterOffset(px, py, prevX, prevY, nextX, nextY, halfWidth, sign) {
   const dot = n1x * mx + n1y * my
 
   if (dot <= 0) {
-    return { x: px + n1x * halfWidth, y: py + n1y * halfWidth }
+    const nx = -t1y * sign
+    const ny = t1x * sign
+    return { x: px + nx * halfWidth, y: py + ny * halfWidth }
   }
 
   const miterLen = halfWidth / dot
@@ -148,5 +150,23 @@ export function renderStroke(ctx, points) {
     ctx.lineTo(i1.x, i1.y)
     ctx.closePath()
     ctx.fill()
+
+    if (i === 1) {
+      const first = points[0]
+      const r0 = (first.thickness || 4) / 2
+      ctx.beginPath()
+      ctx.arc(first.x, first.y, r0, 0, Math.PI * 2)
+      ctx.fillStyle = hslToCss(first.hue ?? 200, first.saturation ?? 70, first.lightness ?? 50)
+      ctx.fill()
+    }
+
+    if (i === n - 1) {
+      const last = points[n - 1]
+      const rN = (last.thickness || 4) / 2
+      ctx.beginPath()
+      ctx.arc(last.x, last.y, rN, 0, Math.PI * 2)
+      ctx.fillStyle = hslToCss(last.hue ?? 200, last.saturation ?? 70, last.lightness ?? 50)
+      ctx.fill()
+    }
   }
 }

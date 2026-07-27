@@ -76,6 +76,41 @@ export default function StageCanvas({
   const activeLayerTfRef = useRef({ x: 0, y: 0 })
   const activeLayerPfRef = useRef(null)
 
+  const MIN_POINT_DIST = 3
+  const SMOOTH_WINDOW = 3
+
+  function smoothStroke(points) {
+    if (points.length <= SMOOTH_WINDOW + 1) return points
+    const result = [points[0]]
+    const half = Math.floor(SMOOTH_WINDOW / 2)
+    for (let i = 1; i < points.length - 1; i++) {
+      let sumX = 0, sumY = 0, sumT = 0, sumH = 0, sumS = 0, sumL = 0, sumD = 0
+      let count = 0
+      for (let j = Math.max(0, i - half); j <= Math.min(points.length - 1, i + half); j++) {
+        sumX += points[j].x
+        sumY += points[j].y
+        sumT += points[j].thickness || 4
+        sumH += points[j].hue || 200
+        sumS += points[j].saturation || 70
+        sumL += points[j].lightness || 50
+        sumD += points[j].distance || 0
+        count++
+      }
+      result.push({
+        x: sumX / count,
+        y: sumY / count,
+        thickness: sumT / count,
+        hue: sumH / count,
+        saturation: sumS / count,
+        lightness: sumL / count,
+        time: points[i].time,
+        distance: sumD / count,
+      })
+    }
+    result.push(points[points.length - 1])
+    return result
+  }
+
   const cursorWorldRef = useRef({ x: 0, y: 0, active: false })
   const kineticAnimatorRef = useRef(new Animator())
   const kineticCurrentPathRef = useRef(null)
@@ -283,6 +318,9 @@ export default function StageCanvas({
 
       ctx.save()
       ctx.globalAlpha = (applyPlacement ? Math.max(0, Math.min(1, pfc.op)) : 1) * Math.max(0, Math.min(1, tfc.op))
+      if (layer.blendMode && layer.blendMode !== 'source-over') {
+        ctx.globalCompositeOperation = layer.blendMode
+      }
 
       for (const lp of linkStack) {
         const ltfc = tfComputed.get(lp.id)
@@ -1086,6 +1124,7 @@ export default function StageCanvas({
     const dx = lx - last.x
     const dy = ly - last.y
     const segLen = Math.sqrt(dx * dx + dy * dy)
+    if (segLen < MIN_POINT_DIST) return
     distanceRef.current += segLen
 
     const thickness = getPenLfoVal(layer, 'thickness', sharedTimeRef.current, distanceRef.current)
@@ -1142,7 +1181,8 @@ export default function StageCanvas({
     }
 
     if (currentStrokeRef.current.length > 0) {
-      onAddStroke([...currentStrokeRef.current])
+      const smoothed = smoothStroke([...currentStrokeRef.current])
+      onAddStroke(smoothed)
       currentStrokeRef.current = []
       distanceRef.current = 0
     }

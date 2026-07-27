@@ -1,5 +1,19 @@
 import LfoStrip from './LfoStrip.jsx'
 
+const BLEND_MODES = [
+  { value: 'source-over', label: 'Normal' },
+  { value: 'multiply', label: 'Multiply' },
+  { value: 'screen', label: 'Screen' },
+  { value: 'overlay', label: 'Overlay' },
+  { value: 'darken', label: 'Darken' },
+  { value: 'lighten', label: 'Lighten' },
+  { value: 'color-dodge', label: 'Color Dodge' },
+  { value: 'color-burn', label: 'Color Burn' },
+  { value: 'lighter', label: 'Add' },
+  { value: 'difference', label: 'Difference' },
+  { value: 'exclusion', label: 'Exclusion' },
+]
+
 const TRANSFORM_KEYS = ['x', 'y', 'rotation', 'opacity']
 
 const KEY_CONFIG = {
@@ -127,6 +141,24 @@ export default function TransformLfoPanel({ layer, onChange, setOriginMode, onSe
         onConfigChange={(newConfig) => updateTransform('scaleY', newConfig)}
         disabled={linked}
       />
+
+      {layer.blendMode !== undefined && (
+        <div className="origin-row" style={{ marginTop: 2, marginBottom: 4 }}>
+          <label style={{ minWidth: 40 }}>Blend</label>
+          <select
+            className="lfo-select"
+            style={{ flex: 1 }}
+            value={layer.blendMode || 'source-over'}
+            onChange={(e) => {
+              onChange((l) => ({ ...l, blendMode: e.target.value }))
+            }}
+          >
+            {BLEND_MODES.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {onLinkParent && layers && (
         <div className="origin-row" style={{ marginBottom: 6 }}>

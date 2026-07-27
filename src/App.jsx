@@ -100,11 +100,16 @@ export default function App() {
   const [shaderCompileErrors, setShaderCompileErrors] = useState({})
   const rafIdRef = useRef(null)
   const popupRef = useRef(null)
+  const undoStacksRef = useRef({})
+  const redoStacksRef = useRef({})
+  const layersRef = useRef(layers)
 
   const activeLayer = layers.find((l) => l.id === activeLayerId) || layers[0]
   const frameLayer = layers.find((l) => l.type === 'frame') || INITIAL_FRAME
   const outputRect = frameLayer.frameRect
   const aspectRatio = frameLayer.aspectRatio
+
+  layersRef.current = layers
 
   const handleUpdateFrame = useCallback((fn) => {
     setLayers((prev) => {
@@ -213,28 +218,60 @@ export default function App() {
   }, [])
 
   const handleAddStroke = useCallback((points) => {
+    const curLayer = layersRef.current.find((l) => l.id === activeLayerId)
+    if (curLayer) {
+      if (!undoStacksRef.current[activeLayerId]) undoStacksRef.current[activeLayerId] = []
+      const stack = undoStacksRef.current[activeLayerId]
+      stack.push(curLayer.strokes)
+      if (stack.length > 50) stack.shift()
+      redoStacksRef.current[activeLayerId] = []
+    }
     updateActiveLayer((layer) => ({
       ...layer,
       strokes: [...layer.strokes, { points }],
     }))
     setStatusText(`Stroke: ${points.length} points`)
-  }, [updateActiveLayer])
+  }, [activeLayerId, updateActiveLayer])
 
   const handleUndo = useCallback(() => {
-    updateActiveLayer((layer) => ({
-      ...layer,
-      strokes: layer.strokes.slice(0, -1),
-    }))
-    setStatusText('Undo')
-  }, [updateActiveLayer])
+    const stack = undoStacksRef.current[activeLayerId]
+    if (!stack || !stack.length) return
+    const prevStrokes = stack.pop()
+    const curLayer = layersRef.current.find((l) => l.id === activeLayerId)
+    if (!curLayer) return
+    if (!redoStacksRef.current[activeLayerId]) redoStacksRef.current[activeLayerId] = []
+    redoStacksRef.current[activeLayerId].push(curLayer.strokes)
+    updateActiveLayer((layer) => ({ ...layer, strokes: prevStrokes }))
+    setStatusText(`Undo (${stack.length} left)`)
+  }, [activeLayerId, updateActiveLayer])
+
+  const handleRedo = useCallback(() => {
+    const rStack = redoStacksRef.current[activeLayerId]
+    if (!rStack || !rStack.length) return
+    const nextStrokes = rStack.pop()
+    const curLayer = layersRef.current.find((l) => l.id === activeLayerId)
+    if (!curLayer) return
+    if (!undoStacksRef.current[activeLayerId]) undoStacksRef.current[activeLayerId] = []
+    undoStacksRef.current[activeLayerId].push(curLayer.strokes)
+    updateActiveLayer((layer) => ({ ...layer, strokes: nextStrokes }))
+    setStatusText(`Redo (${rStack.length} left)`)
+  }, [activeLayerId, updateActiveLayer])
 
   const handleClearLayer = useCallback(() => {
+    const curLayer = layersRef.current.find((l) => l.id === activeLayerId)
+    if (curLayer && curLayer.strokes?.length) {
+      if (!undoStacksRef.current[activeLayerId]) undoStacksRef.current[activeLayerId] = []
+      const stack = undoStacksRef.current[activeLayerId]
+      stack.push(curLayer.strokes)
+      if (stack.length > 50) stack.shift()
+      redoStacksRef.current[activeLayerId] = []
+    }
     updateActiveLayer((layer) => ({
       ...layer,
       strokes: [],
     }))
     setStatusText('Cleared')
-  }, [updateActiveLayer])
+  }, [activeLayerId, updateActiveLayer])
 
   const handleSetOrigin = useCallback((x, y) => {
     updateActiveLayer((layer) => {
@@ -423,6 +460,29 @@ export default function App() {
 
   const handleSetOriginMode = useCallback(() => setSetOriginMode(true), [])
   const handleCancelSetOrigin = useCallback(() => setSetOriginMode(false), [])
+
+  useEffect(() => {
+    const handler = (e) => {
+      const tg = e.target
+      const inInput = tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable
+      if (inInput) return
+
+      const ctrl = e.ctrlKey || e.metaKey
+      if (ctrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault(); handleUndo()
+      } else if ((ctrl && e.key.toLowerCase() === 'z' && e.shiftKey) || (ctrl && e.key.toLowerCase() === 'y')) {
+        e.preventDefault(); handleRedo()
+      } else if (ctrl && e.key === 'd') {
+        e.preventDefault(); handleDuplicateLayer()
+      } else if (e.key === 'Delete' || e.key === 'Del') {
+        handleClearLayer()
+      } else if (ctrl && e.key === 's') {
+        e.preventDefault(); handleExportPNG()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleUndo, handleRedo, handleDuplicateLayer, handleClearLayer, handleExportPNG])
 
   return (
     <div className="app">
